@@ -1,0 +1,16 @@
+node_modules/
+npm-debug.log
+.env
+.env.local
+.DS_Store
+*.db
+*.db-wal
+*.db-shm
+.vscode/
+.idea/
+dist/
+build/
+*.log
+*.pid
+*.seed
+*.pid.lock

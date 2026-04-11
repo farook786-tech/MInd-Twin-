@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: mindtwin-backend
+    runtime: docker
+    rootDir: backend
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: JWT_EXPIRE
+        value: 7d
+      - key: CORS_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE
+        value: /var/data/mindtwin.db
+    disks:
+      - name: mindtwin-data
+        mountPath: /var/data
+        sizeGB: 1
