@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -28,7 +27,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
   int _currentIndex = 0;
 
-  String? get _patientId => FirebaseAuth.instance.currentUser?.uid;
+  String? get _patientId => _authService.currentUserId;
 
   DateTime _todayMidnight() {
     final now = DateTime.now();

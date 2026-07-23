@@ -65,7 +65,19 @@ class _PatientAuthScreenState extends State<PatientAuthScreen> {
           .toList();
       if (mounted) {
         setState(() {
-          _therapists = list;
+          _therapists = list.isNotEmpty
+              ? list
+              : authService.getUsersByRole('therapist').map((user) => {
+                    'id': user['id']?.toString() ?? 'local_therapist',
+                    'name': (user['name'] ?? 'Therapist').toString(),
+                  }).toList();
+          if (_therapists.isEmpty) {
+            _therapists = [
+              {'id': 'therapist_demo', 'name': 'Demo Therapist'},
+            ];
+          }
+          _selectedTherapistId ??= _therapists.first['id']?.toString();
+          _selectedTherapistName ??= _therapists.first['name']?.toString();
           _loadingTherapists = false;
         });
       }
@@ -73,8 +85,19 @@ class _PatientAuthScreenState extends State<PatientAuthScreen> {
       debugPrint('[PatientAuth] Failed to fetch therapists: $e');
       if (mounted) {
         setState(() {
+          _therapists = authService.getUsersByRole('therapist').map((user) => {
+                'id': user['id']?.toString() ?? 'local_therapist',
+                'name': (user['name'] ?? 'Therapist').toString(),
+              }).toList();
+          if (_therapists.isEmpty) {
+            _therapists = [
+              {'id': 'therapist_demo', 'name': 'Demo Therapist'},
+            ];
+          }
+          _selectedTherapistId ??= _therapists.first['id']?.toString();
+          _selectedTherapistName ??= _therapists.first['name']?.toString();
           _loadingTherapists = false;
-          _therapistLoadError = 'Could not load therapists: $e';
+          _therapistLoadError = 'Using local therapist list';
         });
       }
     }

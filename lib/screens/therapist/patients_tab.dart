@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../services/auth_service.dart';
 import '../chat/chat_screen.dart';
 import 'patient_detail_screen.dart';
 
@@ -18,7 +18,7 @@ class _PatientsTabState extends State<PatientsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final therapistId = FirebaseAuth.instance.currentUser?.uid;
+    final therapistId = AuthService().currentUserId;
 
     if (therapistId == null) {
       return _PatientShell(

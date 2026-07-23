@@ -4,13 +4,13 @@ MindTwin is an AI-assisted mental health platform with two experiences:
 - Patient app flow for daily assessment, notes, chat, and personal digital twin insights.
 - Therapist command center for risk monitoring, crisis triage, and intervention planning.
 
-This README is written as a complete project handoff so you can paste it to another AI for architecture/code review.
+This README is a live summary of the repository structure and runtime surfaces.
 
 ## 1. Product Scope
 
 MindTwin combines:
 - Clinical-style daily check-ins (mood/sleep/anxiety/energy + wearable context)
-- ML inference services (sentiment, risk forecast, anomaly, intervention recommendation, crisis NLP)
+- Local ML-style fallbacks in Flutter plus clinical/chat services in Node for risk, crisis, and intervention workflows
 - AI assistant flows (patient companion and therapist assistant)
 - Firestore-based real-time monitoring for therapist workflows
 
@@ -25,17 +25,9 @@ MindTwin combines:
 ### Backend (Node API)
 - Express server in [backend](backend)
 - Primary startup file: [backend/index.js](backend/index.js)
-- ML proxy routes: [backend/src/routes/ml.js](backend/src/routes/ml.js)
-
-### ML Microservice (Python/FastAPI)
-- Service entry: [backend/ml/app.py](backend/ml/app.py)
-- Model modules:
-  - [backend/ml/sentiment_model.py](backend/ml/sentiment_model.py)
-  - [backend/ml/risk_model.py](backend/ml/risk_model.py)
-  - [backend/ml/anomaly_model.py](backend/ml/anomaly_model.py)
-  - [backend/ml/intervention_model.py](backend/ml/intervention_model.py)
-  - [backend/ml/crisis_model.py](backend/ml/crisis_model.py)
-- Optional shared Gemini helper: [backend/ml/gemini_client.py](backend/ml/gemini_client.py)
+- Clinical routes: [backend/src/routes/clinical.js](backend/src/routes/clinical.js)
+- Chat/crisis routes: [backend/src/routes/chat.js](backend/src/routes/chat.js)
+- Compatibility shims for legacy UI calls: [backend/src/routes/ml.js](backend/src/routes/ml.js) and [backend/src/routes/gemini.js](backend/src/routes/gemini.js)
 
 ### Data Layer
 - Firebase Firestore collections for logs, alerts, interventions, users, and chat records.
@@ -48,54 +40,34 @@ MindTwin combines:
 - Therapist screens: [lib/screens/therapist](lib/screens/therapist)
 - Flutter ML service clients: [lib/services](lib/services)
 - Node backend: [backend](backend)
-- Python ML service: [backend/ml](backend/ml)
+- No Python/FastAPI ML service is present in this repository.
 
 ## 4. Implemented ML Features (Backend + Frontend)
 
 ### ML 1: Sentiment Analysis
-Backend:
-- Endpoint: POST /ml/sentiment in [backend/ml/app.py](backend/ml/app.py)
-- Node proxy/fallback: /api/ml/sentiment in [backend/src/routes/ml.js](backend/src/routes/ml.js)
-
 Frontend:
 - Client: [lib/services/ml_sentiment_service.dart](lib/services/ml_sentiment_service.dart)
 - Used in patient check-in notes flow: [lib/screens/patient/daily_checkin_screen.dart](lib/screens/patient/daily_checkin_screen.dart)
-- Therapist sentiment badges: [lib/screens/therapist/patients_tab.dart](lib/screens/therapist/patients_tab.dart)
+- Used in patient chat crisis detection: [lib/screens/patient/patient_ai_chat_screen.dart](lib/screens/patient/patient_ai_chat_screen.dart)
 
 ### ML 2: Risk Prediction (7-day)
-Backend:
-- Endpoint: POST /ml/predict-risk in [backend/ml/app.py](backend/ml/app.py)
-- Node proxy/fallback: /api/ml/predict-risk in [backend/src/routes/ml.js](backend/src/routes/ml.js)
-
 Frontend:
 - Client: [lib/services/ml_risk_service.dart](lib/services/ml_risk_service.dart)
 - Patient digital twin forecast UI: [lib/screens/patient/my_twin_screen.dart](lib/screens/patient/my_twin_screen.dart)
 - Therapist dashboard risk cards: [lib/screens/therapist/dashboard_tab.dart](lib/screens/therapist/dashboard_tab.dart)
 
 ### ML 3: Anomaly Detection
-Backend:
-- Endpoint: POST /ml/detect-anomaly in [backend/ml/app.py](backend/ml/app.py)
-- Node proxy/fallback: /api/ml/detect-anomaly in [backend/src/routes/ml.js](backend/src/routes/ml.js)
-
 Frontend:
 - Client: [lib/services/ml_anomaly_service.dart](lib/services/ml_anomaly_service.dart)
 - Triggered after patient check-in submit: [lib/screens/patient/daily_checkin_screen.dart](lib/screens/patient/daily_checkin_screen.dart)
 - Therapist alert center displays anomalies: [lib/screens/therapist/real_time_alerts_center_screen.dart](lib/screens/therapist/real_time_alerts_center_screen.dart)
 
 ### ML 4: Personalized Intervention Recommender
-Backend:
-- Endpoint: POST /ml/recommend-intervention in [backend/ml/app.py](backend/ml/app.py)
-- Node proxy/fallback: /api/ml/recommend-intervention in [backend/src/routes/ml.js](backend/src/routes/ml.js)
-
 Frontend:
-- Client: [lib/services/ml_intervention_service.dart](lib/services/ml_intervention_service.dart)
+- Local recommendation logic: [lib/services/advanced_clinical_ai_service.dart](lib/services/advanced_clinical_ai_service.dart)
 - Therapist simulator recommendation panel: [lib/screens/therapist/simulator_tab.dart](lib/screens/therapist/simulator_tab.dart)
 
 ### ML 5: NLP Crisis Detection
-Backend:
-- Endpoint: POST /ml/detect-crisis in [backend/ml/app.py](backend/ml/app.py)
-- Node proxy/fallback: /api/ml/detect-crisis in [backend/src/routes/ml.js](backend/src/routes/ml.js)
-
 Frontend:
 - Called from patient chat message flow: [lib/screens/patient/patient_ai_chat_screen.dart](lib/screens/patient/patient_ai_chat_screen.dart)
 - Crisis events written to Firestore and surfaced in therapist alert center: [lib/screens/therapist/real_time_alerts_center_screen.dart](lib/screens/therapist/real_time_alerts_center_screen.dart)
@@ -127,7 +99,7 @@ Frontend:
 ### Node Base
 - Default local URL: http://localhost:5000
 
-### ML API Routes (Node)
+### Compatibility Routes (Node)
 Defined in [backend/src/routes/ml.js](backend/src/routes/ml.js):
 - POST /api/ml/sentiment
 - POST /api/ml/predict-risk
@@ -135,10 +107,8 @@ Defined in [backend/src/routes/ml.js](backend/src/routes/ml.js):
 - POST /api/ml/recommend-intervention
 - POST /api/ml/detect-crisis
 
-### Python ML Service
-- Default local URL: http://localhost:5001
-- Health: GET /health
-- ML endpoints under /ml/* in [backend/ml/app.py](backend/ml/app.py)
+Defined in [backend/src/routes/gemini.js](backend/src/routes/gemini.js):
+- POST /api/gemini/chat
 
 ## 8. Firestore Collections in Use
 
@@ -158,27 +128,19 @@ Primary collections observed in project flows:
 ### Node
 - Managed by [backend/package.json](backend/package.json)
 
-### Python ML
-- Managed by [backend/ml/requirements.txt](backend/ml/requirements.txt)
-- Includes FastAPI and ML dependencies used by model modules.
+### Legacy ML Compatibility
+- Legacy ML-style behavior is now implemented through Flutter fallbacks and Node compatibility routes.
 
 ## 10. Run Instructions (Local)
 
-### 10.1 Start Python ML service
-
-```powershell
-Set-Location C:\MIndTwin\backend\ml
-python app.py
-```
-
-### 10.2 Start Node backend
+### 10.1 Start Node backend
 
 ```powershell
 Set-Location C:\MIndTwin\backend
 node index.js
 ```
 
-### 10.3 Start Flutter frontend
+### 10.2 Start Flutter frontend
 
 ```powershell
 Set-Location C:\MIndTwin

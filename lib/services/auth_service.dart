@@ -21,38 +21,62 @@ class AuthService {
   final DatabaseService _dbService = DatabaseService();
   late SharedPreferences _prefs;
   String? _currentRole;
+  String? _localUserId;
   Map<String, dynamic>? _cachedUserData;
   final Map<String, Map<String, dynamic>> _userCache = {};
+  final Map<String, Map<String, dynamic>> _localAccounts = {};
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    final user = _auth.currentUser;
-    if (user != null) {
+    _loadLocalAccounts();
+
+    final storedSession = _prefs.getString('local_auth_session');
+    if (storedSession != null) {
       try {
+        final session = jsonDecode(storedSession) as Map<String, dynamic>;
+        _localUserId = session['id']?.toString();
+        _currentRole = session['role']?.toString();
+        _cachedUserData = session;
+        if (_localUserId != null) {
+          _userCache[_localUserId!] = _cachedUserData!;
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
         final doc = await _firestore.collection('users').doc(user.uid).get();
         if (doc.exists) {
           final data = doc.data()!;
           _currentRole = data['role'] as String?;
           _cachedUserData = _buildUserMap(user.uid, data);
           _userCache[user.uid] = _cachedUserData!;
+          _localUserId = null;
         }
-      } catch (_) {
-        // Firestore offline — fall back to local cache
-        _currentRole = _prefs.getString('current_role');
-        final cached = _prefs.getString('cached_user_${user.uid}');
-        if (cached != null) {
-          _cachedUserData = jsonDecode(cached) as Map<String, dynamic>;
+      } else {
+        if (_localUserId == null) {
+          _currentRole = null;
+          _cachedUserData = null;
         }
       }
-    } else {
-      _currentRole = null;
-      _cachedUserData = null;
+    } catch (_) {
+      // Firebase unavailable or offline — use local cache/session if present.
+      if (_localUserId == null) {
+        _currentRole = _prefs.getString('current_role') ?? _currentRole;
+        final cached = _prefs.getString('local_auth_session');
+        if (cached != null) {
+          try {
+            _cachedUserData = jsonDecode(cached) as Map<String, dynamic>;
+          } catch (_) {}
+        }
+      }
     }
   }
 
-  String? get currentUserId => _auth.currentUser?.uid;
+  String? get currentUserId => _auth.currentUser?.uid ?? _localUserId;
   String? get currentRole => _currentRole;
-  bool get isAuthenticated => _auth.currentUser != null;
+  bool get isAuthenticated => _auth.currentUser != null || _localUserId != null;
 
   Map<String, dynamic> _buildUserMap(String uid, Map<String, dynamic> data) {
     return {
@@ -76,6 +100,91 @@ class AuthService {
   Future<void> _cacheLocally(String uid, Map<String, dynamic> userData) async {
     await _prefs.setString('current_role', userData['role'] ?? '');
     await _prefs.setString('cached_user_$uid', jsonEncode(userData));
+    await _prefs.setString('local_auth_session', jsonEncode(userData));
+  }
+
+  void _loadLocalAccounts() {
+    final raw = _prefs.getString('local_auth_accounts');
+    if (raw == null || raw.trim().isEmpty) return;
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        for (final entry in decoded.entries) {
+          final value = entry.value;
+          if (value is Map<String, dynamic>) {
+            _localAccounts[entry.key] = value;
+            final uid = value['id']?.toString();
+            if (uid != null) {
+              _userCache[uid] = value;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveLocalAccounts() async {
+    await _prefs.setString('local_auth_accounts', jsonEncode(_localAccounts));
+  }
+
+  Future<Map<String, dynamic>> _signupLocal({
+    required String email,
+    required String password,
+    required String name,
+    required String role,
+    List<String>? securityQuestions,
+    List<String>? securityAnswers,
+    String? therapistId,
+    String? assignedTherapist,
+  }) async {
+    final emailKey = email.toLowerCase().trim();
+    if (_localAccounts.containsKey(emailKey)) {
+      return {'success': false, 'message': 'An account with this email already exists'};
+    }
+
+    final uid = 'local_${DateTime.now().microsecondsSinceEpoch}';
+    final now = DateTime.now().toIso8601String();
+    final hashedAnswers = securityAnswers
+            ?.map((a) => sha256.convert(utf8.encode(a.toLowerCase().trim())).toString())
+            .toList() ??
+        [];
+
+    final userData = {
+      'id': uid,
+      'email': email,
+      'name': name,
+      'role': role,
+      'createdAt': now,
+      'lastLogin': now,
+      'securityQuestions': securityQuestions ?? [],
+      'securityAnswers': hashedAnswers,
+      if (therapistId != null) 'therapistId': therapistId,
+      if (assignedTherapist != null) 'assignedTherapist': assignedTherapist,
+      'authProvider': 'local',
+    };
+
+    _localAccounts[emailKey] = {
+      ...userData,
+      'password': password,
+    };
+    _userCache[uid] = userData;
+    _currentRole = role;
+    _localUserId = uid;
+    _cachedUserData = userData;
+    await _saveLocalAccounts();
+    await _cacheLocally(uid, userData);
+
+    if (role == 'patient' && !kIsWeb) {
+      await _ensurePatientProfile(userId: uid, email: email, name: name);
+    }
+
+    return {
+      'success': true,
+      'userId': uid,
+      'role': role,
+      'token': 'local-session-token',
+    };
   }
 
   /// Signup with email and password
@@ -146,9 +255,27 @@ class AuthService {
         'token': token,
       };
     } on FirebaseAuthException catch (e) {
-      return {'success': false, 'message': e.message ?? 'Signup failed'};
+      return _signupLocal(
+        email: email,
+        password: password,
+        name: name,
+        role: role,
+        securityQuestions: securityQuestions,
+        securityAnswers: securityAnswers,
+        therapistId: therapistId,
+        assignedTherapist: assignedTherapist,
+      );
     } catch (e) {
-      return {'success': false, 'message': 'Signup error: $e'};
+      return _signupLocal(
+        email: email,
+        password: password,
+        name: name,
+        role: role,
+        securityQuestions: securityQuestions,
+        securityAnswers: securityAnswers,
+        therapistId: therapistId,
+        assignedTherapist: assignedTherapist,
+      );
     }
   }
 
@@ -199,10 +326,46 @@ class AuthService {
         'token': token,
       };
     } on FirebaseAuthException catch (e) {
-      return {'success': false, 'message': e.message ?? 'Login failed'};
+      return _loginLocal(email: email, password: password);
     } catch (e) {
-      return {'success': false, 'message': 'Login error: $e'};
+      return _loginLocal(email: email, password: password);
     }
+  }
+
+  Future<Map<String, dynamic>> _loginLocal({
+    required String email,
+    required String password,
+  }) async {
+    final account = _localAccounts[email.toLowerCase().trim()];
+    if (account == null) {
+      return {'success': false, 'message': 'Login failed'};
+    }
+
+    if ((account['password'] ?? '') != password) {
+      return {'success': false, 'message': 'Incorrect password'};
+    }
+
+    final uid = account['id']?.toString() ?? 'local_${email.hashCode.abs()}';
+    final userData = {
+      ...account,
+      'id': uid,
+      'lastLogin': DateTime.now().toIso8601String(),
+      'authProvider': 'local',
+    };
+
+    _localUserId = uid;
+    _currentRole = userData['role'] as String?;
+    _cachedUserData = userData;
+    _userCache[uid] = userData;
+    await _cacheLocally(uid, userData);
+
+    return {
+      'success': true,
+      'userId': uid,
+      'role': _currentRole,
+      'name': userData['name'],
+      'token': 'local-session-token',
+    };
   }
 
   /// Logout
@@ -216,9 +379,13 @@ class AuthService {
       }
     }
     _currentRole = null;
+    _localUserId = null;
     _cachedUserData = null;
     await _prefs.remove('current_role');
-    await _auth.signOut();
+    await _prefs.remove('local_auth_session');
+    try {
+      await _auth.signOut();
+    } catch (_) {}
   }
 
   /// Get current user data

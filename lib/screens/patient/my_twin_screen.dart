@@ -1,10 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../services/auth_service.dart';
 import 'daily_checkin_screen.dart';
 
 class MyTwinScreen extends StatefulWidget {
@@ -16,6 +16,7 @@ class MyTwinScreen extends StatefulWidget {
 
 class _MyTwinScreenState extends State<MyTwinScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final AuthService _authService = AuthService();
   int? _selectedChartIndex;
   int _refreshVersion = 0;
 
@@ -25,7 +26,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
     _refreshVersion = 1;
   }
 
-  String? get _patientId => FirebaseAuth.instance.currentUser?.uid;
+  String? get _patientId => _authService.currentUserId;
 
   void _refreshStreams() {
     if (!mounted) return;

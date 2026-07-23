@@ -1,9 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../services/auth_service.dart';
 import 'appointments_screen.dart';
 import 'patients_tab.dart';
 import 'real_time_alerts_center_screen.dart';
@@ -14,7 +14,7 @@ class DashboardTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final therapistId = FirebaseAuth.instance.currentUser?.uid;
+    final therapistId = AuthService().currentUserId;
 
     if (therapistId == null) {
       return _DashboardShell(

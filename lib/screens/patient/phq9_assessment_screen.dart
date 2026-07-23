@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../services/auth_service.dart';
 import '../../services/ml_risk_service.dart';
 import 'my_twin_screen.dart';
 
@@ -17,6 +17,7 @@ class PHQ9AssessmentScreen extends StatefulWidget {
 
 class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final AuthService _authService = AuthService();
   final MlRiskService _mlRiskService = MlRiskService();
 
   static const List<_AssessmentQuestion> _questions = <_AssessmentQuestion>[
@@ -155,7 +156,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
   Future<void> _submitAssessment() async {
     if (_isSubmitting) return;
 
-    final patientId = FirebaseAuth.instance.currentUser?.uid;
+    final patientId = _authService.currentUserId;
     if (patientId == null || patientId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
