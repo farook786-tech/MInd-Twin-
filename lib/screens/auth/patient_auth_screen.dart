@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import '../../core/config/app_config.dart';
 import '../../core/theme/app_theme.dart';
@@ -35,11 +38,20 @@ class _PatientAuthScreenState extends State<PatientAuthScreen> {
   String? _selectedTherapistName;
   bool _loadingTherapists = false;
   String? _therapistLoadError;
+  StreamSubscription<ConnectivityResult>? _connectivitySub;
 
   @override
   void initState() {
     super.initState();
     _fetchTherapists();
+    // Listen for network restoration and retry fetching therapists automatically.
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((result) {
+      if (result != ConnectivityResult.none) {
+        if (_therapistLoadError != null) {
+          _fetchTherapists();
+        }
+      }
+    });
   }
 
   Future<void> _fetchTherapists() async {
@@ -97,7 +109,7 @@ class _PatientAuthScreenState extends State<PatientAuthScreen> {
           _selectedTherapistId ??= _therapists.first['id']?.toString();
           _selectedTherapistName ??= _therapists.first['name']?.toString();
           _loadingTherapists = false;
-          _therapistLoadError = 'Using local therapist list';
+          _therapistLoadError = 'Using local therapist list — offline or network issue. Will retry automatically when online.';
         });
       }
     }
@@ -498,32 +510,23 @@ class _PatientAuthScreenState extends State<PatientAuthScreen> {
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.red.withValues(alpha: 0.15),
+                              color: Colors.orange.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+                              border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
                               children: [
-                                Row(
-                                  children: [
-                                    const Icon(Icons.error_outline,
-                                        color: Colors.redAccent, size: 16),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        _therapistLoadError!,
-                                        style: const TextStyle(
-                                            color: Colors.redAccent, fontSize: 12),
-                                      ),
-                                    ),
-                                  ],
+                                const Icon(Icons.info_outline, color: Colors.orangeAccent, size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _therapistLoadError!,
+                                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                  ),
                                 ),
-                                const SizedBox(height: 8),
-                                TextButton.icon(
+                                TextButton(
                                   onPressed: _fetchTherapists,
-                                  icon: const Icon(Icons.refresh, size: 14),
-                                  label: const Text('Retry', style: TextStyle(fontSize: 12)),
+                                  child: const Text('Retry', style: TextStyle(fontSize: 12)),
                                   style: TextButton.styleFrom(
                                     foregroundColor: Colors.white70,
                                     padding: EdgeInsets.zero,
@@ -771,6 +774,7 @@ class _PatientAuthScreenState extends State<PatientAuthScreen> {
     answer1Controller.dispose();
     question2Controller.dispose();
     answer2Controller.dispose();
+    _connectivitySub?.cancel();
     super.dispose();
   }
 }

@@ -23,6 +23,7 @@ dependencies:
   # Utilities
   intl: ^0.18.1
   uuid: ^4.3.3
+  connectivity_plus: ^4.0.1
   
   # Database & Storage
   sqflite: ^2.3.0

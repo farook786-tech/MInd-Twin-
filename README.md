@@ -198,3 +198,53 @@ Please provide findings ordered by severity with concrete file references and su
 ## 14. Current State Summary
 
 The repository includes a complete multi-model ML backend and connected Flutter frontend workflows for patient and therapist experiences, with Node proxy fallbacks and real-time Firestore monitoring.
+
+## 15. Firebase Setup (Development)
+
+Short steps to configure Firebase for local development and to reproduce the setup used in this project.
+
+- **Project used in development:** `mindtwin-60879` (example used in this repo).
+
+- **Frontend (web) - add SDK config**: obtain the web SDK config and place it in the Flutter web config helper (generated file in this repo):
+
+```powershell
+firebase apps:sdkconfig WEB --project mindtwin-60879
+```
+
+Copy the returned config into `lib/firebase_options.dart` (the repo already includes the project config used during development).
+
+- **Deploy Firestore rules (when updating rules)**:
+
+```powershell
+firebase deploy --only firestore:rules --project mindtwin-60879
+```
+
+- **Export Authentication users (for verification / debugging)**:
+
+```powershell
+firebase auth:export auth_users.json --project mindtwin-60879
+type auth_users.json
+```
+
+- **Backend Admin SDK (optional, for server-side privileged operations)**:
+	- Create a service account in the Firebase Console (Project settings → Service accounts) and download the JSON key.
+	- Set the environment variable on the machine running the backend:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\path\to\service-account.json'
+# Or permanently set in Windows environment variables.
+```
+
+- **Local verification tips**:
+	- After signing up in the app, check Firebase Console → Authentication and Firestore → Data for `users/{uid}` documents.
+	- If you see `permission-denied` errors in logs, confirm the client is authenticated before the Firestore query, or adjust rules for development and re-deploy.
+
+- **Commit the configuration & rules changes** (example commands):
+
+```powershell
+git add lib/firebase_options.dart firestore.rules firebase.json README.md
+git commit -m "Add Firebase project config, rules, and README setup notes"
+git push
+```
+
+If you want, I can create a separate `docs/FIREBASE_SETUP.md` with more details and screenshots, or stage and commit these changes for you. 
