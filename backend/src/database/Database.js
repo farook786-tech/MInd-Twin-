@@ -1,11 +1,17 @@
 let Database = null;
+let DevJsonDB = null;
 try {
   Database = require('better-sqlite3');
 } catch (error) {
   console.warn(
-    '[Database] better-sqlite3 could not be loaded. Running without SQLite.',
+    '[Database] better-sqlite3 could not be loaded. Attempting JSON fallback.',
     error && error.message ? error.message : error
   );
+  try {
+    DevJsonDB = require('./DevJsonDB');
+  } catch (e) {
+    console.warn('[Database] DevJsonDB fallback missing:', e && e.message ? e.message : e);
+  }
 }
 const path = require('path');
 const fs = require('fs');
@@ -24,8 +30,15 @@ class DatabaseService {
 
   async initialize() {
     if (!Database) {
-      console.warn('[Database] SQLite unavailable. Skipping local DB initialization.');
+      if (DevJsonDB) {
+        console.log('[Database] Using DevJsonDB JSON fallback for development.');
+        this.db = new DevJsonDB();
+        process.env.DATABASE = 'dev-json';
+        return;
+      }
+      console.warn('[Database] SQLite unavailable and no fallback found. Skipping local DB initialization.');
       this.db = null;
+      process.env.DATABASE = 'none';
       return;
     }
 
@@ -38,6 +51,7 @@ class DatabaseService {
 
       await this.createTables();
       console.log('✅ Database initialized successfully');
+      process.env.DATABASE = 'better-sqlite3';
     } catch (error) {
       this.db = null;
       console.warn(

@@ -226,7 +226,10 @@ class AuthService {
         if (assignedTherapist != null) 'assignedTherapist': assignedTherapist,
       };
       debugPrint('[AuthService] Writing user doc for uid=$uid role=$role therapistId=$therapistId');
-      await _firestore.collection('users').doc(uid).set(userDoc);
+      await _firestore.collection('users').doc(uid).set(
+        userDoc,
+        SetOptions(merge: true),
+      );
       debugPrint('[AuthService] Firestore write succeeded for uid=$uid');
 
       _currentRole = role;
@@ -255,27 +258,18 @@ class AuthService {
         'token': token,
       };
     } on FirebaseAuthException catch (e) {
-      return _signupLocal(
-        email: email,
-        password: password,
-        name: name,
-        role: role,
-        securityQuestions: securityQuestions,
-        securityAnswers: securityAnswers,
-        therapistId: therapistId,
-        assignedTherapist: assignedTherapist,
-      );
+      debugPrint('[AuthService] Signup auth failed: ${e.code} ${e.message}');
+      return {
+        'success': false,
+        'message': e.message ?? 'Firebase signup failed',
+        'code': e.code,
+      };
     } catch (e) {
-      return _signupLocal(
-        email: email,
-        password: password,
-        name: name,
-        role: role,
-        securityQuestions: securityQuestions,
-        securityAnswers: securityAnswers,
-        therapistId: therapistId,
-        assignedTherapist: assignedTherapist,
-      );
+      debugPrint('[AuthService] Signup failed: $e');
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
     }
   }
 
@@ -326,9 +320,18 @@ class AuthService {
         'token': token,
       };
     } on FirebaseAuthException catch (e) {
-      return _loginLocal(email: email, password: password);
+      debugPrint('[AuthService] Login auth failed: ${e.code} ${e.message}');
+      return {
+        'success': false,
+        'message': e.message ?? 'Firebase login failed',
+        'code': e.code,
+      };
     } catch (e) {
-      return _loginLocal(email: email, password: password);
+      debugPrint('[AuthService] Login failed: $e');
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
     }
   }
 

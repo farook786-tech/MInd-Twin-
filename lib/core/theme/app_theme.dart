@@ -1,159 +1,148 @@
 import 'package:flutter/material.dart';
+import 'app_colors.dart';
 
-/// Dark Medical Mode Theme
-/// Background: #0a0a0f, Card: #111118, Indigo: #6366f1
-/// Risk Red: #ef4444, Warning Amber: #f59e0b, Safe Green: #22c55e
 class AppTheme {
-  // Core Colors
-  static const Color backgroundDark = Color(0xFF0a0a0f);
-  static const Color cardDark = Color(0xFF111118);
-  static const Color primaryIndigo = Color(0xFF6366f1);
-  static const Color accentCyan = Color(0xFF06b6d4);
-  static const Color riskRed = Color(0xFFef4444);
-  static const Color warningAmber = Color(0xFFf59e0b);
-  static const Color safeGreen = Color(0xFF22c55e);
-  
-  // Gradient for Glassmorphism
-  static const LinearGradient glassGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [
-      Color(0x33ffffff),
-      Color(0x11ffffff),
-    ],
-  );
-
   static ThemeData get darkMedicalTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: backgroundDark,
+      scaffoldBackgroundColor: AppColors.background,
       
       colorScheme: const ColorScheme.dark(
-        primary: primaryIndigo,
-        secondary: primaryIndigo,
-        surface: backgroundDark,
-        error: riskRed,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
-        onSurface: Colors.white,
+        primary: AppColors.primaryCyan,
+        secondary: AppColors.primaryTeal,
+        surface: AppColors.surface,
+        error: AppColors.healthCritical,
+        onPrimary: Colors.black,
+        onSecondary: Colors.black,
+        onSurface: AppColors.textPrimary,
         onError: Colors.white,
       ),
-      
+
       cardTheme: CardThemeData(
-        color: cardDark,
+        color: AppColors.surfaceCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1),
+            color: AppColors.glassBorder,
             width: 1,
           ),
         ),
       ),
-      
+
       appBarTheme: const AppBarTheme(
-        backgroundColor: backgroundDark,
+        backgroundColor: AppColors.background,
         elevation: 0,
         centerTitle: false,
+        iconTheme: IconThemeData(color: AppColors.primaryCyan),
         titleTextStyle: TextStyle(
           color: Colors.white,
-          fontSize: 24,
+          fontSize: 22,
           fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
         ),
       ),
-      
+
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.surfaceCard,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: AppColors.glassBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: AppColors.glassBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.primaryCyan, width: 2),
+        ),
+        hintStyle: const TextStyle(color: AppColors.textMuted),
+      ),
+
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: primaryIndigo,
-          foregroundColor: Colors.white,
-          elevation: 0,
+          backgroundColor: AppColors.primaryCyan,
+          foregroundColor: Colors.black,
+          elevation: 4,
+          shadowColor: AppColors.primaryCyan.withOpacity(0.4),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
           ),
         ),
       ),
-      
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-        displayMedium: TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-        displaySmall: TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-        headlineMedium: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: Colors.white,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: 16,
-          color: Colors.white70,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: 14,
-          color: Colors.white60,
-        ),
-      ),
-      
+
       sliderTheme: SliderThemeData(
-        activeTrackColor: primaryIndigo,
-        inactiveTrackColor: Colors.white.withValues(alpha: 0.2),
-        thumbColor: primaryIndigo,
-        overlayColor: primaryIndigo.withValues(alpha: 0.2),
-        valueIndicatorColor: primaryIndigo,
+        activeTrackColor: AppColors.primaryCyan,
+        inactiveTrackColor: AppColors.surfaceLight,
+        thumbColor: AppColors.primaryCyan,
+        overlayColor: AppColors.primaryCyan.withOpacity(0.2),
+        valueIndicatorColor: AppColors.primaryCyan,
+        valueIndicatorTextStyle: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
       ),
-      
-      switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return primaryIndigo;
-          }
-          return Colors.grey;
-        }),
-        trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return primaryIndigo.withValues(alpha: 0.5);
-          }
-          return Colors.grey.withValues(alpha: 0.3);
-        }),
+
+      textTheme: const TextTheme(
+        displayLarge: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -0.5),
+        displayMedium: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+        displaySmall: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+        headlineMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+        bodyLarge: TextStyle(fontSize: 16, color: AppColors.textPrimary),
+        bodyMedium: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+        bodySmall: TextStyle(fontSize: 12, color: AppColors.textMuted),
       ),
     );
   }
 
-  // Risk Color Helper
   static Color getRiskColor(double riskScore) {
-    if (riskScore >= 0.75) return riskRed;
-    if (riskScore >= 0.50) return warningAmber;
-    return safeGreen;
+    if (riskScore >= 0.75) return AppColors.healthCritical;
+    if (riskScore >= 0.50) return AppColors.healthWarning;
+    if (riskScore >= 0.25) return AppColors.healthModerate;
+    return AppColors.healthOptimal;
   }
 
-  // Glassmorphism Container Decoration
-  static BoxDecoration glassDecoration({Color? color}) {
+  static String getRiskLabel(double riskScore) {
+    if (riskScore >= 0.75) return 'CRITICAL RISK';
+    if (riskScore >= 0.50) return 'ELEVATED RISK';
+    if (riskScore >= 0.25) return 'MODERATE MONITORING';
+    return 'OPTIMAL DIGITAL TWIN';
+  }
+
+  static const Color primaryIndigo = AppColors.primaryCyan;
+  static const Color accentCyan = AppColors.primaryTeal;
+  static const Color riskRed = AppColors.healthCritical;
+  static const Color warningAmber = AppColors.healthWarning;
+  static const Color safeGreen = AppColors.healthOptimal;
+  static const Color backgroundDark = AppColors.background;
+  static const Color cardDark = AppColors.surfaceCard;
+
+
+
+  static BoxDecoration glassDecoration({Color? accentColor, double borderRadius = 20.0}) {
     return BoxDecoration(
-      gradient: glassGradient,
-      borderRadius: BorderRadius.circular(16),
+      color: AppColors.surfaceCard.withValues(alpha: 0.85),
+      borderRadius: BorderRadius.circular(borderRadius),
       border: Border.all(
-        color: Colors.white.withValues(alpha: 0.2),
-        width: 1,
+        color: accentColor?.withValues(alpha: 0.4) ?? AppColors.glassBorder,
+        width: 1.5,
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.3),
-          blurRadius: 20,
-          offset: const Offset(0, 10),
+          color: (accentColor ?? Colors.black).withValues(alpha: 0.15),
+          blurRadius: 24,
+          spreadRadius: 1,
+          offset: const Offset(0, 8),
         ),
       ],
     );
   }
 }
+

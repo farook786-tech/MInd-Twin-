@@ -185,4 +185,53 @@ router.post('/register-therapist', authMiddleware, (req, res) => {
   }
 });
 
+// Firebase Token Exchange & Account Sync Endpoint
+router.post('/firebase-sync', (req, res) => {
+  try {
+    const { uid, email, name, role = 'patient' } = req.body;
+
+    if (!uid || !email) {
+      return res.status(400).json({ error: 'Firebase uid and email required' });
+    }
+
+    const database = db.getDB();
+    let user = database.prepare('SELECT * FROM users WHERE id = ? OR email = ?').get(uid, email.toLowerCase());
+
+    if (!user) {
+      // Create user record for Firebase user in local DB if not present
+      const passwordHash = bcrypt.hashSync(uid + '_firebase_secret', 10);
+      const stmt = database.prepare(`
+        INSERT INTO users (id, email, password_hash, name, role)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      stmt.run(uid, email.toLowerCase(), passwordHash, name || email.split('@')[0], role);
+
+      if (role === 'patient') {
+        const patientStmt = database.prepare('INSERT INTO patients (id, user_id) VALUES (?, ?)');
+        patientStmt.run(uuidv4(), uid);
+
+        const privacyStmt = database.prepare('INSERT INTO privacy_settings (id, user_id) VALUES (?, ?)');
+        privacyStmt.run(uuidv4(), uid);
+      }
+
+      user = { id: uid, email: email.toLowerCase(), role, name: name || email.split('@')[0] };
+    }
+
+    const token = generateToken(user.id, user.role);
+
+    res.json({
+      success: true,
+      token,
+      userId: user.id,
+      role: user.role,
+      name: user.name,
+      email: user.email
+    });
+  } catch (error) {
+    console.error('Firebase sync error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
+
