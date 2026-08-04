@@ -124,7 +124,16 @@ class AppTheme {
   static const Color backgroundDark = AppColors.background;
   static const Color cardDark = AppColors.surfaceCard;
 
-
+  static LinearGradient get glassGradient {
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        AppColors.surfaceCard.withValues(alpha: 0.25),
+        AppColors.primaryCyan.withValues(alpha: 0.10),
+      ],
+    );
+  }
 
   static BoxDecoration glassDecoration({Color? accentColor, double borderRadius = 20.0}) {
     return BoxDecoration(
