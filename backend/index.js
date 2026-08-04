@@ -12,8 +12,21 @@ const syncRoutes = require('./src/routes/sync');
 const clinicalRoutes = require('./src/routes/clinical');
 const realtimeRoutes = require('./src/routes/realtime');
 const chatRoutes = require('./src/routes/chat');
-const mlRoutes    = require('./src/routes/ml');
-const geminiRoutes = require('./src/routes/gemini');
+
+let mlRoutes = null;
+let geminiRoutes = null;
+
+try {
+  mlRoutes = require('./src/routes/ml');
+} catch (error) {
+  console.warn('[Backend] Optional ML routes not available:', error.message);
+}
+
+try {
+  geminiRoutes = require('./src/routes/gemini');
+} catch (error) {
+  console.warn('[Backend] Optional Gemini routes not available:', error.message);
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -52,8 +65,8 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/clinical', clinicalRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/ml',   mlRoutes);
-app.use('/api/gemini', geminiRoutes);
+if (mlRoutes) app.use('/api/ml', mlRoutes);
+if (geminiRoutes) app.use('/api/gemini', geminiRoutes);
 app.use('/api/realtime', realtimeRoutes);
 
 // Health check endpoint
