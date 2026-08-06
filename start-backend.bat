@@ -28,6 +28,14 @@ if not errorlevel 1 (
     echo.
 )
 
+REM Start the ML service (FastAPI crisis model) in its own window
+echo [INFO] Starting ML service on http://127.0.0.1:8000...
+if exist "%~dp0ml_service\venv\Scripts\python.exe" (
+    start "MindTwin ML Service" cmd /k "%~dp0ml_service\start_ml.bat"
+) else (
+    echo [WARNING] ml_service not found or not installed. Crisis detection will use local fallback.
+)
+
 REM Start the backend
 echo [INFO] Starting MindTwin Backend...
 echo [INFO] Backend will run on http://localhost:5000

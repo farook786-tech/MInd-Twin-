@@ -199,6 +199,42 @@ class BackendApiService {
     return _tokenService.getAuthHeaders();
   }
 
+  /// Predict crisis risk via the ML bridge (server-side model + phrase + idiom decision).
+  /// Returns null when the backend is unreachable so callers can fall back
+  /// to local detection. Otherwise returns the bridge payload:
+  /// { success, available, model_version, decision: { escalate, severity, ... } }.
+  Future<Map<String, dynamic>?> predictCrisis({
+    required String text,
+    required String patientId,
+    List<String> recentHistory = const [],
+  }) async {
+    final baseUrl = await _resolveBaseUrl() ?? 'http://127.0.0.1:5000';
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/ml/predict'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'text': text,
+              'patientId': patientId,
+              'recentHistory': recentHistory,
+            }),
+          )
+          .timeout(const Duration(seconds: 4));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<bool> sendSosAlert(Map<String, dynamic> payload) async {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;

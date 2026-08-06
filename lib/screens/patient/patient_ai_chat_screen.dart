@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/backend_api_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/gemini_service.dart';
 import '../../services/ml_sentiment_service.dart';
@@ -24,6 +25,7 @@ class PatientAIChatScreen extends StatefulWidget {
 class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
   final GeminiService _geminiService = GeminiService();
   final MlSentimentService _mlSentimentService = MlSentimentService();
+  final BackendApiService _backendApi = BackendApiService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _messageController = TextEditingController();
   final List<ChatMessage> _messages = [];
@@ -99,100 +101,154 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
   }
 
   Future<void> _runCrisisDetection(String messageText) async {
-    try {
-      final history = _messages
-          .where((m) => m.role == 'user')
-          .map((m) => m.message)
-          .toList();
-      final recentHistory = history.length > 2
-          ? history.sublist(history.length - 2)
-          : history;
+    final userHistory = _messages
+        .where((m) => m.role == 'user')
+        .map((m) => m.message)
+        .toList();
+    final recentHistory = userHistory.length > 2
+        ? userHistory.sublist(userHistory.length - 2)
+        : userHistory;
 
-      final result = await _mlSentimentService.detectCrisis(
+    // 1. Primary path: ML bridge (server-side model + phrase + idiom decision).
+    try {
+      final result = await _backendApi.predictCrisis(
+        text: messageText,
+        patientId: widget.patientId,
+        recentHistory: recentHistory,
+      );
+      if (result != null && result['available'] == true) {
+        final decision = (result['decision'] as Map<String, dynamic>?) ?? {};
+        final severity = (decision['severity'] ?? 'low').toString();
+        if (decision['escalate'] == true) {
+          await _writeCrisisEvent(
+            message: messageText,
+            severity: severity,
+            triggerLayer: (decision['trigger_layer'] ?? 'model').toString(),
+            matchedPhrases:
+                List<String>.from(decision['matched_phrases'] ?? const []),
+            confidence: ((decision['confidence'] ?? 0) as num).toDouble(),
+            modelVersion: result['model_version']?.toString() ?? 'unknown',
+          );
+          await _handleEscalation(severity);
+        }
+        return;
+      }
+    } catch (_) {
+      // Fall through to local detection if the bridge call failed.
+    }
+
+    // 2. Fallback: local phrase-based detection when the ML bridge is unavailable.
+    try {
+      final local = await _mlSentimentService.detectCrisis(
         messageText,
         widget.patientId,
         recentHistory,
       );
+      if (!local.crisisDetected) return;
 
-      if (!result.crisisDetected) return;
+      await _writeCrisisEvent(
+        message: messageText,
+        severity: local.severity,
+        triggerLayer: 'local:${local.triggerLayer}',
+        matchedPhrases: local.matchedPhrases,
+        confidence: local.confidence,
+        modelVersion: 'local',
+      );
+      await _handleEscalation(local.severity);
+    } catch (_) {
+      // Keep chat flow uninterrupted if crisis detection fails.
+    }
+  }
 
-      String therapistId = '';
-      try {
-        final userDoc = await _firestore.collection('users').doc(widget.patientId).get();
-        therapistId = (userDoc.data()?['therapistId'] ?? '').toString();
-      } catch (_) {}
+  Future<void> _writeCrisisEvent({
+    required String message,
+    required String severity,
+    required String triggerLayer,
+    required List<String> matchedPhrases,
+    required double confidence,
+    required String modelVersion,
+  }) async {
+    String therapistId = '';
+    try {
+      final userDoc = await _firestore.collection('users').doc(widget.patientId).get();
+      therapistId = (userDoc.data()?['therapistId'] ?? '').toString();
+    } catch (_) {}
 
-      await _firestore.collection('crisis_events').add({
-        'patientId': widget.patientId,
-        'patientName': widget.patientName,
-        'therapistId': therapistId,
-        'message': messageText,
-        'severity': result.severity,
-        'triggerLayer': result.triggerLayer,
-        'matchedPhrases': result.matchedPhrases,
-        'confidence': result.confidence,
-        'recommendedAction': result.recommendedAction,
-        'safetyPlan': result.safetyPlan,
-        'acknowledged': false,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
+    await _firestore.collection('crisis_events').add({
+      'patientId': widget.patientId,
+      'patientName': widget.patientName,
+      'therapistId': therapistId,
+      'message': message,
+      'severity': severity,
+      'triggerLayer': triggerLayer,
+      'matchedPhrases': matchedPhrases,
+      'confidence': confidence,
+      'modelVersion': modelVersion,
+      'recommendedAction': severity == 'critical' || severity == 'high'
+          ? 'Open safety resources and contact support immediately.'
+          : 'Offer grounding and encourage therapist follow-up.',
+      'safetyPlan': severity == 'critical' || severity == 'high'
+          ? 'Move to a safe place, call local emergency services, and contact a trusted person.'
+          : 'Pause, breathe slowly, and use coping steps before deciding on next action.',
+      'acknowledged': false,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> _handleEscalation(String severity) async {
+    if (!mounted) return;
+
+    if (severity == 'critical') {
+      final action = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.cardDark,
+          title: const Text('Immediate Support Needed 🆘'),
+          content: const Text(
+            "I'm really concerned about you right now. You're not alone. "
+            'Would you like me to connect you with your therapist immediately?\n\n'
+            'National Crisis Helpline: iCall 9152987821',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Open Safety Resources'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Connect Therapist'),
+            ),
+          ],
+        ),
+      );
 
       if (!mounted) return;
 
-      if (result.severity == 'critical') {
-        final action = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: AppTheme.cardDark,
-            title: const Text('Immediate Support Needed 🆘'),
-            content: const Text(
-              "I'm really concerned about you right now. You're not alone. "
-              'Would you like me to connect you with your therapist immediately?\n\n'
-              'National Crisis Helpline: iCall 9152987821',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Open Safety Resources'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Connect Therapist'),
-              ),
-            ],
+      if (action == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your therapist has been alerted immediately.'),
+            backgroundColor: AppTheme.riskRed,
           ),
         );
-
-        if (!mounted) return;
-
-        if (action == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Your therapist has been alerted immediately.'),
-              backgroundColor: AppTheme.riskRed,
-            ),
-          );
-        } else {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
-          );
-        }
-      } else if (result.severity == 'high') {
-        setState(() {
-          _messages.add(ChatMessage(
-            id: 'care_${DateTime.now().millisecondsSinceEpoch}',
-            role: 'assistant',
-            message:
-                'I hear how heavy this feels right now. I am here with you. '
-                'Let us take one small step together and bring in extra support from your therapist.',
-            timestamp: DateTime.now(),
-          ));
-        });
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+        );
       }
-    } catch (_) {
-      // Keep chat flow uninterrupted if crisis detection fails.
+    } else if (severity == 'high') {
+      setState(() {
+        _messages.add(ChatMessage(
+          id: 'care_${DateTime.now().millisecondsSinceEpoch}',
+          role: 'assistant',
+          message:
+              'I hear how heavy this feels right now. I am here with you. '
+              'Let us take one small step together and bring in extra support from your therapist.',
+          timestamp: DateTime.now(),
+        ));
+      });
     }
   }
 
