@@ -16,8 +16,8 @@ class AuthService {
 
   AuthService._internal();
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late final FirebaseAuth _auth = FirebaseAuth.instance;
+  late final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final DatabaseService _dbService = DatabaseService();
   late SharedPreferences _prefs;
   String? _currentRole;

@@ -277,29 +277,47 @@ class RealTimeAlertsCenterScreen extends StatelessWidget {
       _ => AppTheme.safeGreen,
     };
 
+    final anomalyType = _safeString(alert['anomalyType'], fallback: 'Anomaly');
+    final isVitalsAnomaly = anomalyType.toLowerCase().contains('heart') || 
+                            anomalyType.toLowerCase().contains('vitals') ||
+                            alert.containsKey('heartRate');
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.cardDark,
+        color: isVitalsAnomaly ? Colors.pinkAccent.withValues(alpha: 0.08) : AppTheme.cardDark,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color, width: 1.2),
+        border: Border.all(
+          color: isVitalsAnomaly ? Colors.pinkAccent : color,
+          width: isVitalsAnomaly ? 1.6 : 1.2,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '$patientName - ${_safeString(alert['anomalyType'], fallback: 'Anomaly')}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
+          Row(
+            children: [
+              if (isVitalsAnomaly) ...[
+                const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 18),
+                const SizedBox(width: 6),
+              ],
+              Expanded(
+                child: Text(
+                  '$patientName - $anomalyType',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             _safeString(alert['description'], fallback: 'No description'),
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.72)),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
           ),
           const SizedBox(height: 4),
           Text(

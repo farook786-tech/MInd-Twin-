@@ -14,11 +14,12 @@ import 'services/database_service.dart';
 import 'services/notification_service.dart';
 import 'services/fcm_service.dart';
 import 'services/token_service.dart';
+import 'services/wearable_sync_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
+  // Initialize Firebase first because AuthService and wearable sync depend on Firebase instances.
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -30,6 +31,9 @@ void main() async {
   // Initialize services
   final authService = AuthService();
   await authService.init();
+
+  // Initialize wearable bridge after Firebase/Auth are ready.
+  await WearableSyncService().initialize();
   
   // Initialize database only for non-web platforms
   if (!kIsWeb) {

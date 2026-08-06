@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../services/auth_service.dart';
+import '../../services/wearable_sync_service.dart';
 import 'daily_checkin_screen.dart';
 
 class MyTwinScreen extends StatefulWidget {
@@ -625,6 +626,8 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             ),
           ),
           const SizedBox(height: 20),
+          _buildWearableVitalsCard(),
+          const SizedBox(height: 20),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: _latestClinicalAssessments(patientId),
             builder: (context, snapshot) {
@@ -796,6 +799,137 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildWearableVitalsCard() {
+    final syncService = WearableSyncService();
+    return StreamBuilder<Map<String, dynamic>>(
+      stream: syncService.heartRateStream,
+      initialData: syncService.lastReceivedVitals,
+      builder: (context, snapshot) {
+        final data = snapshot.data;
+        final bpm = data?['bpm'] as int?;
+        final timestamp = data?['timestamp'] as DateTime?;
+        final timeString = timestamp != null
+            ? DateFormat('hh:mm:ss a').format(timestamp)
+            : 'Never';
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.cardDark,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.25), width: 1.5),
+            gradient: LinearGradient(
+              colors: [
+                AppTheme.cardDark,
+                Colors.pinkAccent.withValues(alpha: 0.05),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.watch_rounded, color: Colors.pinkAccent, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Galaxy Watch4 Vitals',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.pinkAccent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.pinkAccent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'LIVE',
+                          style: TextStyle(
+                            color: Colors.pinkAccent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          bpm != null ? '$bpm BPM' : '-- BPM',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -1,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Last Synced: $timeString',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.pinkAccent.withValues(alpha: 0.2),
+                      foregroundColor: Colors.pinkAccent,
+                      elevation: 0,
+                      side: const BorderSide(color: Colors.pinkAccent, width: 1),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () {
+                      final randomBpm = 65 + (DateTime.now().millisecond % 50);
+                      syncService.simulateHeartRate(randomBpm);
+                    },
+                    icon: const Icon(Icons.bolt, size: 16),
+                    label: const Text('Simulate HR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
