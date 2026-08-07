@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import '../models/daily_log.dart';
-import 'database_service.dart';
+import 'daily_log_source.dart';
 
 class RiskPrediction {
   final double riskScore;
@@ -24,11 +24,11 @@ class RiskPrediction {
 }
 
 class MlRiskService {
-  final DatabaseService _databaseService = DatabaseService();
+  final DailyLogSource _dailyLogSource = DailyLogSource();
 
   Future<RiskPrediction> predictRisk(String patientId) async {
     try {
-      final logs = await _databaseService.getDailyLogs(patientId);
+      final logs = await _dailyLogSource.getDailyLogs(patientId);
       if (logs.isEmpty) {
         return const RiskPrediction(
           riskScore: 35,
@@ -71,7 +71,7 @@ class MlRiskService {
         prediction7Days: prediction7Days,
         keyFactors: keyFactors.isEmpty ? ['Check-in pattern available'] : keyFactors,
         confidence: min(0.95, 0.55 + (recent.length * 0.05)),
-        source: 'local-database',
+        source: 'firestore-daily-logs',
       );
     } catch (_) {
       return const RiskPrediction(

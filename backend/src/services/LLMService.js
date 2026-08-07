@@ -622,7 +622,7 @@ Include: validation, grounding technique, safety resources.`;
       const response = await axios.post(`${this.baseURL}/chat/completions`, {
         model: this.model,
         messages: [
-          { role: 'system', content: this.systemPrompt },
+          { role: 'system', content: this._getSystemPrompt('patient') },
           { role: 'user', content: crisisPrompt }
         ],
         max_tokens: 150,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'backend_api_service.dart';
+import 'token_service.dart';
 
 class GeminiService {
   final BackendApiService _apiService = BackendApiService();
@@ -29,14 +30,14 @@ class GeminiService {
         final response = await http
             .post(
               Uri.parse('$baseUrl/api/gemini/chat'),
-              headers: {'Content-Type': 'application/json'},
+              headers: TokenService().getAuthHeaders(),
               body: jsonEncode({
                 'prompt': userPrompt,
                 'systemPrompt': systemPrompt,
                 'history': history ?? [],
               }),
             )
-            .timeout(const Duration(seconds: 12));
+            .timeout(const Duration(seconds: 20));
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           final data = jsonDecode(response.body) as Map<String, dynamic>;

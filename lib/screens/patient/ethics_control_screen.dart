@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/database_service.dart';
@@ -258,14 +259,10 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                 ),
               ),
 
-            Container(
+            AppCard(
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppTheme.cardDark,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-              ),
+              radius: 10,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -371,13 +368,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
     required IconData icon,
     required bool recommended,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.cardDark,
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      padding: const EdgeInsets.all(16),
+    return AppCard(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

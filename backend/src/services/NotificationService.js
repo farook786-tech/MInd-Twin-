@@ -247,6 +247,7 @@ class NotificationService {
   // Helper methods
   _getTitleForAlertType(alertType, severity) {
     const titles = {
+      sos: '🚨 SOS - Patient Needs Immediate Support',
       severe_depression: 'Severe Depression Alert',
       poor_treatment_response: 'Poor Treatment Response',
       high_dropout_risk: 'High Dropout Risk',

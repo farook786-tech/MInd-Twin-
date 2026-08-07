@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'token_service.dart';
 
 /// Chat message model
 class ChatMessage {
@@ -74,7 +75,7 @@ class ChatService {
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/api/chat/message'),
-        headers: {'Content-Type': 'application/json'},
+        headers: TokenService().getAuthHeaders(),
         body: jsonEncode({
           'userId': _userId,
           'userRole': _userRole,
@@ -121,6 +122,7 @@ class ChatService {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/api/chat/conversation/$conversationId'),
+        headers: TokenService().getAuthHeaders(),
       );
 
       if (response.statusCode == 200) {
@@ -143,6 +145,7 @@ class ChatService {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/api/chat/conversations/$_userId'),
+        headers: TokenService().getAuthHeaders(),
       );
 
       if (response.statusCode == 200) {
@@ -162,6 +165,7 @@ class ChatService {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/api/chat/tokens/status'),
+        headers: TokenService().getAuthHeaders(),
       );
 
       if (response.statusCode == 200) {

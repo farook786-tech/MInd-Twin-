@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/backend_api_service.dart';
 
@@ -420,54 +421,22 @@ class _PatientAppointmentsScreenState extends State<PatientAppointmentsScreen> {
             )
           : _appointments.isEmpty
               ? Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryIndigo.withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.event_available_rounded,
-                              size: 64,
-                              color: AppTheme.primaryIndigo.withValues(alpha: 0.6)),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          _backendApiService.isConfigured
-                              ? 'No appointments scheduled'
-                              : 'Backend not configured',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _backendApiService.isConfigured
-                              ? (_treatmentPlans.isNotEmpty
-                                  ? 'You still have ${_treatmentPlans.length} treatment plan update(s).'
-                                  : 'Book your first appointment to get started')
-                              : 'Set backend URL to enable booking sync',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 14,
-                          ),
-                        ),
-                        if (_treatmentPlans.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed: _showTreatmentPlansSheet,
-                            icon: const Icon(Icons.assignment_rounded),
-                            label: const Text('View Treatment Plans'),
-                          ),
-                        ],
-                      ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: EmptyState(
+                      emoji: '📅',
+                      message: _backendApiService.isConfigured
+                          ? (_treatmentPlans.isNotEmpty
+                              ? 'You still have ${_treatmentPlans.length} treatment plan update(s).'
+                              : 'No appointments scheduled\nBook your first appointment to get started')
+                          : 'Backend not configured\nSet backend URL to enable booking sync',
+                      action: _treatmentPlans.isNotEmpty
+                          ? OutlinedButton.icon(
+                              onPressed: _showTreatmentPlansSheet,
+                              icon: const Icon(Icons.assignment_rounded),
+                              label: const Text('View Treatment Plans'),
+                            )
+                          : null,
                     ),
                   ),
                 )

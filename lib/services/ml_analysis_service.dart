@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'dart:math';
-import 'database_service.dart';
+import 'daily_log_source.dart';
 import '../models/daily_log.dart';
 
 /// Represents ML analysis results
@@ -42,12 +42,12 @@ class MLAnalysisService {
 
   MLAnalysisService._internal();
 
-  final _dbService = DatabaseService();
+  final _dailyLogSource = DailyLogSource();
 
   /// Analyze patient mental health data using ML algorithms
   Future<MentalHealthAnalysis> analyzePatientHealth(String userId) async {
     try {
-      final logs = await _dbService.getDailyLogs(userId);
+      final logs = await _dailyLogSource.getDailyLogs(userId);
 
       if (logs.isEmpty) {
         return MentalHealthAnalysis(

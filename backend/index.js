@@ -29,7 +29,8 @@ try {
 }
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const BASE_PORT = Number(process.env.PORT || 5000);
+const MAX_PORT_ATTEMPTS = 20;
 
 // Middleware
 app.use(cors({
@@ -96,10 +97,35 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🚀 MindTwin Backend running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-  console.log(`🔌 Database: ${process.env.DATABASE}`);
-});
+const startServer = (port = BASE_PORT, attempt = 1) => {
+  const server = app.listen(port, () => {
+    console.log(`🚀 MindTwin Backend running on port ${port}`);
+    console.log(`📊 Environment: ${process.env.NODE_ENV}`);
+    console.log(`🔌 Database: ${process.env.DATABASE}`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      if (attempt >= MAX_PORT_ATTEMPTS) {
+        console.error(`[Backend] Port ${port} is busy and no free port was found after ${MAX_PORT_ATTEMPTS} attempts.`);
+        process.exit(1);
+        return;
+      }
+
+      const nextPort = port + 1;
+      console.warn(`[Backend] Port ${port} is already in use. Trying ${nextPort}...`);
+      if (server.listening) {
+        server.close(() => startServer(nextPort, attempt + 1));
+      } else {
+        startServer(nextPort, attempt + 1);
+      }
+    } else {
+      console.error('[Backend] Failed to start server:', err);
+      process.exit(1);
+    }
+  });
+};
+
+startServer();
 
 module.exports = app;

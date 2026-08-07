@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const LLMService = require('../services/LLMService');
+const { authMiddleware, canAccessPatient } = require('../middleware/auth');
 
 const llm = new LLMService();
 
@@ -8,7 +9,7 @@ const llm = new LLMService();
  * POST /api/chat/message
  * Send a message and get AI response
  */
-router.post('/message', async (req, res) => {
+router.post('/message', authMiddleware, async (req, res) => {
   try {
     const { userId, userRole, message, conversationId, context } = req.body;
 
@@ -17,6 +18,11 @@ router.post('/message', async (req, res) => {
         success: false,
         error: 'Missing required fields: userId, userRole, message'
       });
+    }
+
+    // Patients may only chat on their own behalf.
+    if (req.userRole === 'patient' && userId !== req.userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
     const result = await llm.sendChatMessage(userId, userRole, message, conversationId, context || {});
@@ -39,7 +45,7 @@ router.post('/message', async (req, res) => {
  * GET /api/chat/conversation/:conversationId
  * Retrieve chat conversation history
  */
-router.get('/conversation/:conversationId', (req, res) => {
+router.get('/conversation/:conversationId', authMiddleware, (req, res) => {
   try {
     const { conversationId } = req.params;
     const messages = llm.getConversation(conversationId);
@@ -62,9 +68,15 @@ router.get('/conversation/:conversationId', (req, res) => {
  * GET /api/chat/conversations/:userId
  * Get all conversations for a user
  */
-router.get('/conversations/:userId', (req, res) => {
+router.get('/conversations/:userId', authMiddleware, (req, res) => {
   try {
     const { userId } = req.params;
+
+    // Patients may only list their own conversations.
+    if (req.userRole === 'patient' && userId !== req.userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
     const conversations = llm.getUserConversations(userId);
 
     res.json({
@@ -85,7 +97,7 @@ router.get('/conversations/:userId', (req, res) => {
  * GET /api/chat/tokens/status
  * Get current token usage status
  */
-router.get('/tokens/status', (req, res) => {
+router.get('/tokens/status', authMiddleware, (req, res) => {
   try {
     const status = llm.getTokenStatus();
     res.json({
@@ -105,7 +117,7 @@ router.get('/tokens/status', (req, res) => {
  * POST /api/chat/crisis-response
  * Generate crisis intervention message (minimal token use)
  */
-router.post('/crisis-response', async (req, res) => {
+router.post('/crisis-response', authMiddleware, async (req, res) => {
   try {
     const { patientId, riskLevel } = req.body;
 
@@ -114,6 +126,10 @@ router.post('/crisis-response', async (req, res) => {
         success: false,
         error: 'Missing patientId or riskLevel'
       });
+    }
+
+    if (!canAccessPatient(req, patientId)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
     const result = await llm.generateCrisisResponse(patientId, riskLevel);
@@ -136,7 +152,7 @@ router.post('/crisis-response', async (req, res) => {
  * POST /api/chat/analyze-assessment
  * Analyze patient assessment with AI
  */
-router.post('/analyze-assessment', async (req, res) => {
+router.post('/analyze-assessment', authMiddleware, async (req, res) => {
   try {
     const { assessmentData } = req.body;
 

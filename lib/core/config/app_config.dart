@@ -19,8 +19,4 @@ class AppConfig {
     return 'unified';
   }
 
-  static const String geminiApiKey = 'AIzaSyCduTbmjeGdDKPsaCk_QPg7M2S1Z70ha9w';
-    static const String geminiModel = 'gemini-2.0-flash';
-  static const String geminiEndpoint =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 }

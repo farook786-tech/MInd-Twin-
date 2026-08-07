@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:async';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
 
@@ -255,14 +256,8 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 16),
-                  ..._journals.take(5).map((journal) => Container(
+                  ..._journals.take(5).map((journal) => AppCard(
                     margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.cardDark,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

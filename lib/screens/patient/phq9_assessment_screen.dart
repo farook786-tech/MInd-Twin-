@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/ml_risk_service.dart';
 import 'my_twin_screen.dart';
@@ -441,13 +442,10 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
       children: [
-        Container(
+        AppCard(
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: AppTheme.cardDark.withValues(alpha: 0.86),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-          ),
+          radius: 22,
+          color: AppTheme.cardDark.withValues(alpha: 0.86),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

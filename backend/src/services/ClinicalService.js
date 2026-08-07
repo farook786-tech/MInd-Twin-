@@ -7,8 +7,10 @@ const { v4: uuidv4 } = require('uuid');
  * NO random values - all calculations based on actual clinical data
  */
 class ClinicalService {
-  constructor() {
-    this.db = DatabaseService.getInstance().getDB();
+  // Resolve the DB handle lazily: Database.initialize() runs after module
+  // load, so capturing it in the constructor would lock in a null handle.
+  get db() {
+    return DatabaseService.getInstance().getDB();
   }
 
   /**

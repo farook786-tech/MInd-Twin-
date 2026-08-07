@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_card.dart';
+import '../../core/widgets/twin_chart.dart';
 import '../../services/auth_service.dart';
 import '../chat/chat_screen.dart';
 import 'daily_checkin_screen.dart';
@@ -76,25 +77,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         .snapshots();
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _latestTwoDailyLogsStream(String patientId) {
-    return _dailyLogsStream(patientId);
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _lastSevenLogsStream(String patientId) {
-    return _dailyLogsStream(patientId);
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _todayCheckInStream(String patientId) {
-    return _dailyLogsStream(patientId);
-  }
-
   Stream<QuerySnapshot<Map<String, dynamic>>> _todayAppointmentStream(String patientId) {
     return _firestore
         .collection('appointments')
         .where('patientId', isEqualTo: patientId)
         .where('scheduledAt', isGreaterThanOrEqualTo: Timestamp.fromDate(_todayMidnight()))
         .limit(10)
-      .snapshots();
+        .snapshots();
   }
 
   String _timeGreeting() {
@@ -209,33 +198,44 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         lastCheckInDate != null && _isSameDay(lastCheckInDate.toLocal(), now.toLocal());
 
     if (!checkedInToday && isMorning) {
-      return 'Good morning $patientName! Ready to start your check-in? 💙';
+      return 'Ready to start your check-in? 💙';
     }
 
     if (!checkedInToday && isEvening) {
-      return 'Hey $patientName, you have not checked in yet. How are you feeling? 💙';
+      return 'You have not checked in yet. How are you feeling? 💙';
     }
 
     if (checkedInToday && latestRiskScore != null && latestRiskScore >= 75) {
-      return 'I am concerned about you $patientName. Please reach out to your therapist 💙';
+      return 'I am concerned about you. Please reach out to your therapist 💙';
     }
 
     if (checkedInToday && latestRiskScore != null && latestRiskScore >= 50) {
-      return 'I see today is a bit tough $patientName. I am here if you need me 💙';
+      return 'I see today is a bit tough. I am here if you need me 💙';
     }
 
     if (checkedInToday && latestRiskScore != null && latestRiskScore < 50) {
-      return 'Great job checking in $patientName! You are doing well today 🌟';
+      return 'Great job checking in today! You are doing well 🌟';
     }
 
     return 'I am here for you today 💙';
   }
 
-  Future<void> _openCheckIn() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const DailyCheckInScreen()),
-    );
+  void _openCheckIn() {
+    setState(() {
+      _currentIndex = 1;
+    });
+  }
+
+  void _openMyTwinTab() {
+    setState(() {
+      _currentIndex = 2;
+    });
+  }
+
+  void _switchTab(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
   }
 
   Future<void> _openAllyChat() async {
@@ -296,35 +296,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
     Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
   }
 
-  Widget _sectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: AppTheme.cardDark,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-    );
-  }
-
   Widget _buildGreetingCard(Map<String, dynamic>? userData) {
-    final name = _toStringOrNull(userData?['name']) ?? 'Name unavailable';
+    final name = _toStringOrNull(userData?['name']) ?? 'there';
     final greeting = _timeGreeting();
+    final lastCheckInDate = _toDateTime(userData?['lastCheckInDate']);
+    final latestRiskScore = _toDouble(userData?['latestRiskScore']);
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(),
+    return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -338,10 +316,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'I\'m here for you today 💙',
+            _allyMessage(
+              patientName: name,
+              lastCheckInDate: lastCheckInDate,
+              latestRiskScore: latestRiskScore,
+            ),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.85),
               fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1.35,
             ),
           ),
         ],
@@ -355,22 +339,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       builder: (context, userSnapshot) {
         if (userSnapshot.connectionState == ConnectionState.waiting &&
             !userSnapshot.hasData) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: _cardDecoration(),
-            child: Text(
-              'Loading risk score...',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
-            ),
-          );
+          return const AppCard(child: Center(child: CircularProgressIndicator()));
         }
 
         final userData = userSnapshot.data?.data();
         final riskScore = _toDouble(userData?['latestRiskScore']);
         if (riskScore == null) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: _cardDecoration(),
+          return AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -397,9 +372,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         final userRiskLevel = _toStringOrNull(userData?['latestRiskLevel']);
         final riskLevelText = userRiskLevel ?? _riskLevelForUserField(normalizedRisk);
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: _cardDecoration(),
+        return AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -407,17 +380,18 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                 'Risk Score',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 15,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
-                '${normalizedRisk.toStringAsFixed(0)}% ($riskLevelText) ${riskBand.emoji}',
+                '${normalizedRisk.toStringAsFixed(0)}% $riskLevelText ${riskBand.emoji}',
                 style: TextStyle(
                   color: riskBand.color,
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.w800,
+                  height: 1.2,
                 ),
               ),
               const SizedBox(height: 4),
@@ -426,11 +400,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                 style: TextStyle(
                   color: riskBand.color,
                   fontWeight: FontWeight.w700,
+                  fontSize: 13,
                 ),
               ),
               const SizedBox(height: 10),
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _latestTwoDailyLogsStream(patientId),
+                stream: _dailyLogsStream(patientId),
                 builder: (context, trendSnapshot) {
                   if (trendSnapshot.connectionState == ConnectionState.waiting &&
                       !trendSnapshot.hasData) {
@@ -440,15 +415,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                     );
                   }
 
-                  if (trendSnapshot.hasError && !trendSnapshot.hasData) {
-                    return Text(
-                      'Trend unavailable.',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
-                    );
-                  }
-
-                  final docs =
-                      trendSnapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+                  final docs = trendSnapshot.data?.docs ??
+                      <QueryDocumentSnapshot<Map<String, dynamic>>>[];
                   final sorted = docs.toList()
                     ..sort((a, b) {
                       final aTime = _toDateTime(a.data()['timestamp']);
@@ -468,10 +436,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                   }
 
                   return Text(
-                    _trendText(latestRisk, previousRisk),
+                    '${_trendText(latestRisk, previousRisk)} vs yesterday',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.9),
                       fontWeight: FontWeight.w600,
+                      fontSize: 13,
                     ),
                   );
                 },
@@ -490,22 +459,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         future: _calculateAndPersistStreak(patientId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Container(
-              padding: const EdgeInsets.all(16),
-              decoration: _cardDecoration(),
-              child: const Center(child: CircularProgressIndicator()),
-            );
+            return const AppCard(child: Center(child: CircularProgressIndicator()));
           }
 
           if (snapshot.hasError) {
-            return Container(
-              padding: const EdgeInsets.all(16),
-              decoration: _cardDecoration(),
+            return AppCard(
               child: Text(
                 _streakText(0),
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -520,11 +483,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       );
     }
 
-    final progress = ((streak.toDouble() / 7.0) * 100.0).clamp(0.0, 100.0).toDouble();
+    final progress =
+        ((streak.toDouble() / 7.0) * 100.0).clamp(0.0, 100.0).toDouble();
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(),
+    return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -532,26 +494,27 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             _streakText(streak),
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 16,
+              fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
-              minHeight: 10,
+              minHeight: 8,
               value: progress / 100.0,
               backgroundColor: Colors.white.withValues(alpha: 0.12),
               color: AppTheme.primaryIndigo,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
-            '${progress.toStringAsFixed(0)}%',
+            '$progress% of your 7-day goal',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -561,195 +524,58 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
   Widget _buildMiniChartCard(String patientId) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _lastSevenLogsStream(patientId),
+      stream: _dailyLogsStream(patientId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: _cardDecoration(),
-            child: Text(
-              'Loading chart data...',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
-            ),
-          );
+          return const EmptyState(message: 'Loading chart data...');
         }
 
         if (snapshot.hasError && !snapshot.hasData) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: _cardDecoration(),
-            child: Text(
-              'Could not load chart data.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
-            ),
-          );
+          return const EmptyState(message: 'Could not load chart data.');
         }
 
-        final docs = snapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+        final docs = snapshot.data?.docs ??
+            <QueryDocumentSnapshot<Map<String, dynamic>>>[];
         final sortedDocs = docs.toList()
           ..sort((a, b) {
-            final aTime = a.data()['timestamp'] as Timestamp?;
-            final bTime = b.data()['timestamp'] as Timestamp?;
+            final aTime = _toDateTime(a.data()['timestamp']);
+            final bTime = _toDateTime(b.data()['timestamp']);
             if (aTime == null || bTime == null) return 0;
             return aTime.compareTo(bTime);
           });
 
         if (sortedDocs.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: _cardDecoration(),
-            child: Text(
-              'Complete check-ins to see your chart 📊',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+          return EmptyState(
+            message: 'Complete check-ins to see your chart',
+            emoji: '📊',
+            action: TextButton(
+              onPressed: _openCheckIn,
+              child: const Text('Start Check-in →'),
             ),
           );
         }
 
         final logs = sortedDocs.length > 7
-          ? sortedDocs.sublist(sortedDocs.length - 7).map((d) => d.data()).toList()
-          : sortedDocs.map((d) => d.data()).toList();
-        final moodSpots = <FlSpot>[];
-        final sleepSpots = <FlSpot>[];
-        final energySpots = <FlSpot>[];
-        final riskSpots = <FlSpot>[];
-        final dayLabels = <String>[];
+            ? sortedDocs.sublist(sortedDocs.length - 7)
+            : sortedDocs;
 
-        for (var i = 0; i < logs.length; i++) {
-          final row = logs[i];
-          final mood = _toDouble(row['moodScore']);
-          final sleep = _toDouble(row['sleepScore']);
-          final energy = _toDouble(row['energyScore']);
-          final ts = _toDateTime(row['timestamp']);
+        final points = logs.map((d) {
+          final data = d.data();
+          return TwinChartPoint(
+            timestamp: _toDateTime(data['timestamp']) ?? DateTime.now(),
+            mood: _toDouble(data['moodScore']),
+            sleep: _toDouble(data['sleepScore']),
+            energy: _toDouble(data['energyScore']),
+            risk: _toDouble(data['riskScore']),
+          );
+        }).toList();
 
-          if (mood != null) {
-            moodSpots.add(FlSpot(i.toDouble(), (mood / 5.0) * 10.0));
-          }
-          if (sleep != null) {
-            sleepSpots.add(FlSpot(i.toDouble(), (sleep / 4.0) * 10.0));
-          }
-          if (energy != null) {
-            energySpots.add(FlSpot(i.toDouble(), (energy / 4.0) * 10.0));
-          }
-          final risk = _toDouble(row['riskScore']);
-          if (risk != null) {
-            riskSpots.add(FlSpot(i.toDouble(), (risk / 10.0).clamp(0.0, 10.0)));
-          }
-
-          if (ts == null) {
-            dayLabels.add('N/A');
-          } else {
-            dayLabels.add(DateFormat('EEEE').format(ts));
-          }
-        }
-
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: _cardDecoration(),
+        return AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                height: 200,
-                child: LineChart(
-                  LineChartData(
-                    minX: 0,
-                    maxX: logs.length <= 1 ? 1 : (logs.length - 1).toDouble(),
-                    minY: 0,
-                    maxY: 10,
-                    gridData: FlGridData(
-                      show: true,
-                      horizontalInterval: 2,
-                      drawVerticalLine: false,
-                      getDrawingHorizontalLine: (_) => FlLine(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        strokeWidth: 1,
-                      ),
-                    ),
-                    borderData: FlBorderData(
-                      show: true,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                    ),
-                    titlesData: FlTitlesData(
-                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          interval: 2,
-                          reservedSize: 26,
-                          getTitlesWidget: (value, _) => Text(
-                            value.toInt().toString(),
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.65),
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          interval: 1,
-                          getTitlesWidget: (value, _) {
-                            final index = value.toInt();
-                            if (index < 0 || index >= dayLabels.length) {
-                              return const SizedBox.shrink();
-                            }
-                            return Text(
-                              dayLabels[index].substring(0, 3),
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7),
-                                fontSize: 10,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: moodSpots,
-                        isCurved: true,
-                        color: Colors.blue,
-                        barWidth: 2.5,
-                        dotData: const FlDotData(show: true),
-                      ),
-                      LineChartBarData(
-                        spots: sleepSpots,
-                        isCurved: true,
-                        color: Colors.green,
-                        barWidth: 2.5,
-                        dotData: const FlDotData(show: true),
-                      ),
-                      LineChartBarData(
-                        spots: energySpots,
-                        isCurved: true,
-                        color: Colors.purple,
-                        barWidth: 2.5,
-                        dotData: const FlDotData(show: true),
-                      ),
-                      LineChartBarData(
-                        spots: riskSpots,
-                        isCurved: true,
-                        color: Colors.orange,
-                        barWidth: 2.5,
-                        dotData: const FlDotData(show: true),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Wrap(
-                spacing: 12,
-                children: [
-                  _LegendChip(color: Colors.blue, label: 'Mood'),
-                  _LegendChip(color: Colors.green, label: 'Sleep'),
-                  _LegendChip(color: Colors.purple, label: 'Energy'),
-                  _LegendChip(color: Colors.orange, label: 'Risk'),
-                ],
-              ),
+              TwinTrendChart(points: points),
               if (logs.length == 1) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -760,15 +586,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MyTwinScreen()),
-                  );
-                },
-                child: const Text('View Full Twin →'),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _openMyTwinTab,
+                  child: const Text('View Full Twin →'),
+                ),
               ),
             ],
           ),
@@ -779,51 +603,44 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
   Widget _buildStartMyDayCard(String patientId) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _todayCheckInStream(patientId),
+      stream: _dailyLogsStream(patientId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: _cardDecoration(),
-            child: Text(
-              'Loading today\'s check-in status...',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
-            ),
-          );
+          return const EmptyState(message: 'Loading today\'s check-in status...');
         }
 
         if (snapshot.hasError && !snapshot.hasData) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: _cardDecoration(),
-            child: Text(
-              'Could not verify today\'s check-in.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
-            ),
-          );
+          return const EmptyState(message: 'Could not verify today\'s check-in.');
         }
 
-        final docs = snapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+        final docs = snapshot.data?.docs ??
+            <QueryDocumentSnapshot<Map<String, dynamic>>>[];
         final checkedInToday = docs.any((doc) {
           final ts = _toDateTime(doc.data()['timestamp']);
           if (ts == null) return false;
           return _isSameDay(ts.toLocal(), DateTime.now().toLocal());
         });
 
-        return Container(
-          decoration: _cardDecoration(),
-          child: ElevatedButton(
-            onPressed: _openCheckIn,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: checkedInToday ? AppTheme.safeGreen.withValues(alpha: 0.25) : AppTheme.primaryIndigo,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 56),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            ),
-            child: Text(
-              checkedInToday ? 'View Today\'s Check-in ✓' : '🌅 Start My Day',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        return AppCard(
+          padding: EdgeInsets.zero,
+          child: SizedBox(
+            height: 64,
+            child: ElevatedButton(
+              onPressed: _openCheckIn,
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    checkedInToday ? AppTheme.safeGreen.withValues(alpha: 0.25) : AppTheme.primaryIndigo,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 64),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: Text(
+                checkedInToday ? 'View Today\'s Check-in ✓' : '🌅 Start My Day',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
             ),
           ),
         );
@@ -838,42 +655,39 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       required VoidCallback onTap,
     }) {
       return Expanded(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: _cardDecoration(),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-              child: Column(
-                children: [
-                  Text(emoji, style: const TextStyle(fontSize: 22)),
-                  const SizedBox(height: 6),
-                  Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+        child: AppCard(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          onTap: onTap,
+          child: Column(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 22)),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
+            ],
           ),
         ),
       );
     }
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         item(
           emoji: '🤖',
           label: 'Talk to Ally',
           onTap: _openAllyChat,
         ),
+        const SizedBox(width: 10),
         item(
           emoji: '📋',
           label: 'PHQ-9 Check',
@@ -884,6 +698,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             );
           },
         ),
+        const SizedBox(width: 10),
         item(
           emoji: '🛡️',
           label: 'Safety',
@@ -898,50 +713,21 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
     );
   }
 
-  Widget _buildAllyMessageCard(Map<String, dynamic>? userData) {
-    final name = _toStringOrNull(userData?['name']) ?? 'there';
-    final lastCheckInDate = _toDateTime(userData?['lastCheckInDate']);
-    final latestRiskScore = _toDouble(userData?['latestRiskScore']);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(),
-      child: Text(
-        _allyMessage(
-          patientName: name,
-          lastCheckInDate: lastCheckInDate,
-          latestRiskScore: latestRiskScore,
-        ),
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          height: 1.35,
-        ),
-      ),
-    );
-  }
-
   Widget _buildAppointmentReminder(String patientId) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _todayAppointmentStream(patientId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
-          return Text(
-            'Loading appointment reminder...',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
-          );
+          return const SizedBox.shrink();
         }
 
         if (snapshot.hasError && !snapshot.hasData) {
-          return Text(
-            'Could not load appointment reminder.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
-          );
+          return const SizedBox.shrink();
         }
 
-        final docs = snapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+        final docs = snapshot.data?.docs ??
+            <QueryDocumentSnapshot<Map<String, dynamic>>>[];
         if (docs.isEmpty) {
           return const SizedBox.shrink();
         }
@@ -956,16 +742,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
         final data = sortedDocs.first.data();
         final scheduledAt = _toDateTime(data['scheduledAt']);
-        if (scheduledAt == null || !_isSameDay(scheduledAt.toLocal(), DateTime.now().toLocal())) {
+        if (scheduledAt == null ||
+            !_isSameDay(scheduledAt.toLocal(), DateTime.now().toLocal())) {
           return const SizedBox.shrink();
         }
 
-        final therapistName = _toStringOrNull(data['therapistName']) ?? 'Therapist name unavailable';
+        final therapistName =
+            _toStringOrNull(data['therapistName']) ?? 'Therapist name unavailable';
         final timeText = DateFormat('hh:mm a').format(scheduledAt);
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: _cardDecoration(),
+        return AppCard(
           child: Text(
             '📅 Session with $therapistName at $timeText today',
             style: const TextStyle(
@@ -985,19 +771,19 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       builder: (context, userSnapshot) {
         if (userSnapshot.connectionState == ConnectionState.waiting &&
             !userSnapshot.hasData) {
-          return Center(
+          return const Center(
             child: Text(
               'Loading home data...',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+              style: TextStyle(color: Colors.white),
             ),
           );
         }
 
         if (userSnapshot.hasError && !userSnapshot.hasData) {
-          return Center(
+          return const Center(
             child: Text(
               'Could not load home data.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+              style: TextStyle(color: Colors.white),
             ),
           );
         }
@@ -1012,23 +798,24 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             children: [
               _buildGreetingCard(userData),
               const SizedBox(height: 14),
-              _sectionTitle('Risk Score'),
-              _buildRiskCard(patientId),
-              const SizedBox(height: 14),
-              _sectionTitle('Streak'),
-              _buildStreakCard(patientId, userData),
-              const SizedBox(height: 14),
-              _sectionTitle('My Twin Mini Chart'),
-              _buildMiniChartCard(patientId),
-              const SizedBox(height: 14),
               _buildStartMyDayCard(patientId),
-              const SizedBox(height: 14),
-              _sectionTitle('Quick Actions'),
+              const SizedBox(height: 18),
+              const SectionHeader(title: 'Today at a Glance', emoji: '📊'),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _buildRiskCard(patientId)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildStreakCard(patientId, userData)),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const SectionHeader(title: 'My Twin', emoji: '🧬'),
+              _buildMiniChartCard(patientId),
+              const SizedBox(height: 18),
+              const SectionHeader(title: 'Quick Actions', emoji: '⚡'),
               _buildQuickActions(),
-              const SizedBox(height: 14),
-              _sectionTitle('Ally Message'),
-              _buildAllyMessageCard(userData),
-              const SizedBox(height: 14),
+              const SizedBox(height: 18),
               _buildAppointmentReminder(patientId),
             ],
           ),
@@ -1046,8 +833,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         const Center(child: Text('Please sign in to view your home.'))
       else
         _buildHomeTab(patientId),
-      const VoiceJournalScreen(),
+      DailyCheckInScreen(embedded: true, onNavigateTab: _switchTab),
       const MyTwinScreen(),
+      const VoiceJournalScreen(),
       const EthicsControlScreen(),
     ];
 
@@ -1073,7 +861,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           ),
         ],
       ),
-      body: tabs[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: tabs,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         backgroundColor: AppTheme.cardDark,
@@ -1085,44 +876,18 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.mic_none), label: 'Journal'),
+          NavigationDestination(
+            icon: Icon(Icons.edit_calendar_outlined),
+            label: 'Check-in',
+          ),
           NavigationDestination(icon: Icon(Icons.auto_graph), label: 'My Twin'),
-          NavigationDestination(icon: Icon(Icons.privacy_tip_outlined), label: 'Privacy'),
+          NavigationDestination(icon: Icon(Icons.mic_none), label: 'Journal'),
+          NavigationDestination(
+            icon: Icon(Icons.privacy_tip_outlined),
+            label: 'Privacy',
+          ),
         ],
       ),
-    );
-  }
-}
-
-class _LegendChip extends StatelessWidget {
-  final Color color;
-  final String label;
-
-  const _LegendChip({
-    required this.color,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
     );
   }
 }

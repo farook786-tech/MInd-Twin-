@@ -2,7 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const ClinicalService = require('../services/ClinicalService');
 const DatabaseService = require('../database/Database');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requirePatientAccess, requireTherapistSelf, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 const db = DatabaseService.getInstance();
@@ -13,7 +13,7 @@ const clinicalService = new ClinicalService();
  * Submit PHQ-9 Assessment (Hospital-Grade Clinical Assessment)
  * Request: { patientId, therapistId, responses: [0-3, ...9 items], notes }
  */
-router.post('/phq9', (req, res) => {
+router.post('/phq9', authMiddleware, requirePatientAccess, (req, res) => {
   try {
     const {
       patientId,
@@ -49,7 +49,7 @@ router.post('/phq9', (req, res) => {
  * GET /api/clinical/assessment-history/:patientId
  * Get all PHQ-9 assessments for patient (time series)
  */
-router.get('/assessment-history/:patientId', (req, res) => {
+router.get('/assessment-history/:patientId', authMiddleware, requirePatientAccess, (req, res) => {
   try {
     const { patientId } = req.params;
 
@@ -75,7 +75,7 @@ router.get('/assessment-history/:patientId', (req, res) => {
  * GET /api/clinical/treatment-response/:patientId
  * Get treatment response metrics (baseline vs current)
  */
-router.get('/treatment-response/:patientId', async (req, res) => {
+router.get('/treatment-response/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
 
@@ -107,7 +107,7 @@ router.get('/treatment-response/:patientId', async (req, res) => {
  * GET /api/clinical/risk-factors/:patientId
  * Get real-time clinical risk factors
  */
-router.get('/risk-factors/:patientId', async (req, res) => {
+router.get('/risk-factors/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
 
@@ -128,7 +128,7 @@ router.get('/risk-factors/:patientId', async (req, res) => {
  * GET /api/clinical/engagement/:patientId
  * Get patient engagement metrics (dropout risk)
  */
-router.get('/engagement/:patientId', async (req, res) => {
+router.get('/engagement/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
 
@@ -148,7 +148,7 @@ router.get('/engagement/:patientId', async (req, res) => {
  * GET /api/clinical/summary/:patientId
  * Get comprehensive treatment summary (all metrics)
  */
-router.get('/summary/:patientId', async (req, res) => {
+router.get('/summary/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
 
@@ -168,7 +168,7 @@ router.get('/summary/:patientId', async (req, res) => {
  * GET /api/clinical/alerts/:therapistId
  * Get all active clinical alerts for therapist
  */
-router.get('/alerts/:therapistId', (req, res) => {
+router.get('/alerts/:therapistId', authMiddleware, requireTherapistSelf, (req, res) => {
   try {
     const { therapistId } = req.params;
 
@@ -189,7 +189,7 @@ router.get('/alerts/:therapistId', (req, res) => {
  * POST /api/clinical/alerts/:alertId/acknowledge
  * Acknowledge a clinical alert
  */
-router.post('/alerts/:alertId/acknowledge', (req, res) => {
+router.post('/alerts/:alertId/acknowledge', authMiddleware, requireRole(['therapist', 'admin']), (req, res) => {
   try {
     const { alertId } = req.params;
     const { actionTaken } = req.body;
@@ -215,7 +215,7 @@ router.post('/alerts/:alertId/acknowledge', (req, res) => {
  * POST /api/clinical/interventions
  * Record evidence-based intervention recommendation
  */
-router.post('/interventions', (req, res) => {
+router.post('/interventions', authMiddleware, requirePatientAccess, (req, res) => {
   try {
     const {
       patientId,
@@ -268,7 +268,7 @@ router.post('/interventions', (req, res) => {
  * GET /api/clinical/interventions/:patientId
  * Get all intervention recommendations for patient
  */
-router.get('/interventions/:patientId', (req, res) => {
+router.get('/interventions/:patientId', authMiddleware, requirePatientAccess, (req, res) => {
   try {
     const { patientId } = req.params;
 
@@ -294,7 +294,7 @@ router.get('/interventions/:patientId', (req, res) => {
  * Recalculate all clinical metrics for a patient (runs all assessments)
  * Useful for batch processing or scheduled updates
  */
-router.post('/calculate-all-metrics/:patientId', async (req, res) => {
+router.post('/calculate-all-metrics/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
 

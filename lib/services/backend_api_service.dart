@@ -211,10 +211,11 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl() ?? 'http://127.0.0.1:5000';
 
     try {
+      final headers = await _getHeaders();
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/ml/predict'),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: jsonEncode({
               'text': text,
               'patientId': patientId,
@@ -251,6 +252,55 @@ class BackendApiService {
     }
   }
 
+  /// Exchange a Firebase sign-in for a backend JWT (and sync the account).
+  /// Returns the backend response { success, token, userId, role, name, email }
+  /// or { success: false, message } when the backend is unreachable.
+  Future<Map<String, dynamic>> firebaseSync({
+    required String uid,
+    required String email,
+    String? name,
+    String? role,
+  }) async {
+    final baseUrl = await _resolveBaseUrl();
+    if (baseUrl == null) {
+      return {'success': false, 'message': 'Backend not configured'};
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/auth/firebase-sync'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'uid': uid,
+          'email': email,
+          'name': name,
+          'role': role,
+        }),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          final token = decoded['token']?.toString();
+          if (token != null && token.isNotEmpty) {
+            await _tokenService.storeToken(token);
+          }
+          return {'success': true, ...decoded};
+        }
+      }
+
+      return {
+        'success': false,
+        'message': 'Backend sync failed',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Backend sync failed: $e',
+      };
+    }
+  }
+
   Future<Map<String, dynamic>> loginRemote({
     required String email,
     required String password,
@@ -273,6 +323,10 @@ class BackendApiService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
         if (decoded is Map<String, dynamic>) {
+          final token = decoded['token']?.toString();
+          if (token != null && token.isNotEmpty) {
+            await _tokenService.storeToken(token);
+          }
           return {
             'success': true,
             ...decoded,
@@ -316,6 +370,10 @@ class BackendApiService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
         if (decoded is Map<String, dynamic>) {
+          final token = decoded['token']?.toString();
+          if (token != null && token.isNotEmpty) {
+            await _tokenService.storeToken(token);
+          }
           return {
             'success': true,
             ...decoded,
@@ -339,9 +397,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/chat/send'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           ...payload,
@@ -360,9 +419,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return const [];
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/sync/public/chat/messages?clinicCode=$_clinicCode&userA=$userA&userB=$userB'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
@@ -475,9 +535,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/checkin'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           ...payload,
@@ -494,11 +555,12 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return {};
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse(
           '$baseUrl/api/sync/public/therapist-dashboard?clinicCode=$_clinicCode&limit=$limit',
         ),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -518,9 +580,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/appointments/book'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           ...payload,
@@ -537,6 +600,7 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return const [];
     try {
+      final headers = await _getHeaders();
       final uri = patientExternalId == null || patientExternalId.isEmpty
           ? Uri.parse('$baseUrl/api/sync/public/appointments?clinicCode=$_clinicCode')
           : Uri.parse(
@@ -545,7 +609,7 @@ class BackendApiService {
 
       final response = await http.get(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -569,9 +633,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/treatment-plans/send'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           ...payload,
@@ -588,6 +653,7 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return const [];
     try {
+      final headers = await _getHeaders();
       final uri = patientExternalId == null || patientExternalId.isEmpty
           ? Uri.parse('$baseUrl/api/sync/public/treatment-plans?clinicCode=$_clinicCode')
           : Uri.parse(
@@ -596,7 +662,7 @@ class BackendApiService {
 
       final response = await http.get(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -620,9 +686,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/appointments/mark-seen'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           'appointmentId': appointmentId,
@@ -639,9 +706,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/appointments/mark-accepted'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           'appointmentId': appointmentId,
@@ -658,9 +726,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/treatment-plans/mark-seen'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           'planId': planId,
@@ -677,9 +746,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/treatment-plans/mark-accepted'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           'planId': planId,
@@ -696,9 +766,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync/public/messages/mark-read'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'clinicCode': _clinicCode,
           'messageId': messageId,
@@ -722,9 +793,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return {'success': false};
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/clinical/phq9'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'patientId': patientId,
           'therapistId': therapistId,
@@ -746,9 +818,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return const [];
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/clinical/assessment-history/$patientId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -768,9 +841,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return {};
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/clinical/summary/$patientId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body);
@@ -787,9 +861,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return {};
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/clinical/engagement/$patientId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body);
@@ -806,9 +881,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return {};
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/clinical/risk-factors/$patientId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body);
@@ -825,9 +901,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return const [];
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/clinical/alerts/$therapistId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body);
@@ -847,9 +924,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/clinical/alerts/$alertId/acknowledge'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'actionTaken': actionTaken,
         }),
@@ -874,9 +952,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/clinical/interventions'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'patientId': patientId,
           'therapistId': therapistId,
@@ -899,9 +978,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return const [];
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/clinical/interventions/$patientId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body);
@@ -925,9 +1005,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/wearable/mood'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'patientId': patientId,
           'moodScore': moodScore,
@@ -947,9 +1028,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/wearable/anxiety'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'patientId': patientId,
           'anxietyScore': anxietyScore,
@@ -974,9 +1056,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/wearable/sleep'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'patientId': patientId,
           'sleepDuration': sleepDuration,
@@ -1002,9 +1085,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/wearable/heartrate'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'patientId': patientId,
           'heartRate': heartRate,
@@ -1031,9 +1115,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/wearable/activity'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'patientId': patientId,
           'steps': steps,
@@ -1055,9 +1140,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/wearable/batch'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'patientId': patientId,
           'dataPoints': dataPoints,
@@ -1075,9 +1161,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return {};
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/realtime/wearable/summary/$patientId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body);
@@ -1098,9 +1185,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/notifications/register-device'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'therapistId': therapistId,
           'deviceToken': deviceToken,
@@ -1119,9 +1207,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/notifications/test-alert'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'therapistId': therapistId,
           'patientName': patientName,
@@ -1141,9 +1230,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return false;
     try {
+      final headers = await _getHeaders();
       final response = await http.post(
         Uri.parse('$baseUrl/api/realtime/reminders/manual/$patientId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
@@ -1157,9 +1247,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return {};
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/realtime/reminders/stats/$therapistId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body);
@@ -1180,8 +1271,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return null;
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/realtime/reports/treatment/$patientId?therapistId=$therapistId'),
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         // In real implementation, save PDF to file storage
@@ -1200,8 +1293,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return null;
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/realtime/reports/progress/$patientId'),
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return 'progress_${patientId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -1219,8 +1314,10 @@ class BackendApiService {
     final baseUrl = await _resolveBaseUrl();
     if (baseUrl == null) return null;
     try {
+      final headers = await _getHeaders();
       final response = await http.get(
         Uri.parse('$baseUrl/api/realtime/reports/wearable/$patientId?days=$days'),
+        headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return 'wearable_${patientId}_${DateTime.now().millisecondsSinceEpoch}.pdf';

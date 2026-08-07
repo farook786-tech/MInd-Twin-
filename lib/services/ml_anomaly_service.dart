@@ -1,4 +1,4 @@
-import 'database_service.dart';
+import 'daily_log_source.dart';
 
 class AnomalyResult {
   final bool anomalyDetected;
@@ -19,11 +19,11 @@ class AnomalyResult {
 }
 
 class MlAnomalyService {
-  final DatabaseService _databaseService = DatabaseService();
+  final DailyLogSource _dailyLogSource = DailyLogSource();
 
   Future<AnomalyResult> detectAnomaly(String patientId) async {
     try {
-      final logs = await _databaseService.getDailyLogs(patientId);
+      final logs = await _dailyLogSource.getDailyLogs(patientId);
       if (logs.length < 3) {
         return const AnomalyResult(
           anomalyDetected: false,

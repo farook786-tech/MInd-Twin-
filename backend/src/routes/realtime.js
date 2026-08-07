@@ -4,6 +4,7 @@ const NotificationService = require('../services/NotificationService');
 const EngagementReminderService = require('../services/EngagementReminderService');
 const PDFReportService = require('../services/PDFReportService');
 const Database = require('../database/Database');
+const { authMiddleware, requirePatientAccess, requireTherapistSelf, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 const db = new Database();
@@ -23,7 +24,7 @@ const pdfService = new PDFReportService();
  * Record real-time mood data from wearable
  * Expected: { patientId, moodScore: 1-10, timestamp?: ISO8601 }
  */
-router.post('/wearable/mood', async (req, res) => {
+router.post('/wearable/mood', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId, moodScore, timestamp } = req.body;
 
@@ -43,7 +44,7 @@ router.post('/wearable/mood', async (req, res) => {
  * POST /api/realtime/wearable/anxiety
  * Record real-time anxiety data from wearable
  */
-router.post('/wearable/anxiety', async (req, res) => {
+router.post('/wearable/anxiety', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId, anxietyScore, timestamp } = req.body;
 
@@ -63,7 +64,7 @@ router.post('/wearable/anxiety', async (req, res) => {
  * POST /api/realtime/wearable/sleep
  * Record real-time sleep data from wearable
  */
-router.post('/wearable/sleep', async (req, res) => {
+router.post('/wearable/sleep', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId, sleepDuration, sleepQuality, timestamp } = req.body;
 
@@ -88,7 +89,7 @@ router.post('/wearable/sleep', async (req, res) => {
  * POST /api/realtime/wearable/heartrate
  * Record real-time heart rate data from wearable
  */
-router.post('/wearable/heartrate', async (req, res) => {
+router.post('/wearable/heartrate', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId, heartRate, isResting, timestamp } = req.body;
 
@@ -108,7 +109,7 @@ router.post('/wearable/heartrate', async (req, res) => {
  * POST /api/realtime/wearable/activity
  * Record real-time activity data from wearable
  */
-router.post('/wearable/activity', async (req, res) => {
+router.post('/wearable/activity', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId, steps, activityMinutes, caloriesBurned, timestamp } = req.body;
 
@@ -135,7 +136,7 @@ router.post('/wearable/activity', async (req, res) => {
  * Batch ingest multiple wearable data points
  * Expected: { patientId, dataPoints: [{ type, value, timestamp }...] }
  */
-router.post('/wearable/batch', async (req, res) => {
+router.post('/wearable/batch', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId, dataPoints } = req.body;
 
@@ -155,7 +156,7 @@ router.post('/wearable/batch', async (req, res) => {
  * GET /api/realtime/wearable/summary/:patientId
  * Get wearable data summary (last 7 days)
  */
-router.get('/wearable/summary/:patientId', async (req, res) => {
+router.get('/wearable/summary/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
     const summary = await wearableService.getWearableSummary(patientId);
@@ -175,7 +176,7 @@ router.get('/wearable/summary/:patientId', async (req, res) => {
  * POST /api/realtime/notifications/register-device
  * Register device token for push notifications
  */
-router.post('/notifications/register-device', async (req, res) => {
+router.post('/notifications/register-device', authMiddleware, requireTherapistSelf, async (req, res) => {
   try {
     const { therapistId, deviceToken, platform } = req.body;
 
@@ -195,7 +196,7 @@ router.post('/notifications/register-device', async (req, res) => {
  * POST /api/realtime/notifications/test-alert
  * Send test alert for configuration verification
  */
-router.post('/notifications/test-alert', async (req, res) => {
+router.post('/notifications/test-alert', authMiddleware, requireTherapistSelf, async (req, res) => {
   try {
     const { therapistId, patientName } = req.body;
 
@@ -230,7 +231,7 @@ router.post('/notifications/test-alert', async (req, res) => {
  * Evaluate all patients and send reminders if needed
  * (Should be called periodically, e.g., every 30 minutes)
  */
-router.post('/reminders/evaluate', async (req, res) => {
+router.post('/reminders/evaluate', authMiddleware, requireRole(['therapist', 'admin']), async (req, res) => {
   try {
     const result = await reminderService.evaluateAndSendReminders();
     res.json(result);
@@ -244,7 +245,7 @@ router.post('/reminders/evaluate', async (req, res) => {
  * POST /api/realtime/reminders/manual/:patientId
  * Manually trigger reminder for specific patient
  */
-router.post('/reminders/manual/:patientId', async (req, res) => {
+router.post('/reminders/manual/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
     const result = await reminderService.triggerManualReminder(patientId);
@@ -259,7 +260,7 @@ router.post('/reminders/manual/:patientId', async (req, res) => {
  * GET /api/realtime/reminders/stats/:therapistId
  * Get reminder statistics for therapist
  */
-router.get('/reminders/stats/:therapistId', async (req, res) => {
+router.get('/reminders/stats/:therapistId', authMiddleware, requireTherapistSelf, async (req, res) => {
   try {
     const { therapistId } = req.params;
     const stats = await reminderService.getReminderStats(therapistId);
@@ -278,7 +279,7 @@ router.get('/reminders/stats/:therapistId', async (req, res) => {
  * GET /api/realtime/reports/treatment/:patientId
  * Generate comprehensive treatment outcome report (PDF)
  */
-router.get('/reports/treatment/:patientId', async (req, res) => {
+router.get('/reports/treatment/:patientId', authMiddleware, requirePatientAccess, requireTherapistSelf, async (req, res) => {
   try {
     const { patientId } = req.params;
     const { therapistId } = req.query;
@@ -304,7 +305,7 @@ router.get('/reports/treatment/:patientId', async (req, res) => {
  * GET /api/realtime/reports/progress/:patientId
  * Generate simple progress report (PDF)
  */
-router.get('/reports/progress/:patientId', async (req, res) => {
+router.get('/reports/progress/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
     const result = await pdfService.generateProgressReport(patientId);
@@ -324,7 +325,7 @@ router.get('/reports/progress/:patientId', async (req, res) => {
  * GET /api/realtime/reports/wearable/:patientId
  * Generate wearable data summary report (PDF)
  */
-router.get('/reports/wearable/:patientId', async (req, res) => {
+router.get('/reports/wearable/:patientId', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const { patientId } = req.params;
     const { days } = req.query;

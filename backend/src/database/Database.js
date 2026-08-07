@@ -75,6 +75,7 @@ class DatabaseService {
         password_hash TEXT NOT NULL,
         name TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'patient',
+        auth_provider TEXT DEFAULT 'local',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`,
@@ -457,6 +458,16 @@ class DatabaseService {
   applyMigrations() {
     if (!this.db) {
       return;
+    }
+
+    // Backfill auth_provider column for existing databases.
+    const usersColumns = this.db
+      .prepare('PRAGMA table_info(users)')
+      .all()
+      .map((column) => column.name);
+
+    if (!usersColumns.includes('auth_provider')) {
+      this.db.exec("ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'local'");
     }
 
     // Backfill columns added after initial deployment for shared chat read receipts.

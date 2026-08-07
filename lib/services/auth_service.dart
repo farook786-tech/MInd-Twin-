@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/patient.dart';
 import 'database_service.dart';
+import 'backend_api_service.dart';
+import 'token_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -19,16 +21,16 @@ class AuthService {
   late final FirebaseAuth _auth = FirebaseAuth.instance;
   late final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final DatabaseService _dbService = DatabaseService();
+  final BackendApiService _backendApi = BackendApiService();
+  final TokenService _tokenService = TokenService();
   late SharedPreferences _prefs;
   String? _currentRole;
   String? _localUserId;
   Map<String, dynamic>? _cachedUserData;
   final Map<String, Map<String, dynamic>> _userCache = {};
-  final Map<String, Map<String, dynamic>> _localAccounts = {};
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    _loadLocalAccounts();
 
     final storedSession = _prefs.getString('local_auth_session');
     if (storedSession != null) {
@@ -103,88 +105,28 @@ class AuthService {
     await _prefs.setString('local_auth_session', jsonEncode(userData));
   }
 
-  void _loadLocalAccounts() {
-    final raw = _prefs.getString('local_auth_accounts');
-    if (raw == null || raw.trim().isEmpty) return;
-
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) {
-        for (final entry in decoded.entries) {
-          final value = entry.value;
-          if (value is Map<String, dynamic>) {
-            _localAccounts[entry.key] = value;
-            final uid = value['id']?.toString();
-            if (uid != null) {
-              _userCache[uid] = value;
-            }
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _saveLocalAccounts() async {
-    await _prefs.setString('local_auth_accounts', jsonEncode(_localAccounts));
-  }
-
-  Future<Map<String, dynamic>> _signupLocal({
+  /// Exchange the Firebase session for a backend JWT so backend API calls are
+  /// authorized. Non-fatal: when the backend is unreachable or rejects the
+  /// account, local auth still works and a stale token is cleared.
+  Future<void> _syncBackendToken({
+    required String uid,
     required String email,
-    required String password,
-    required String name,
-    required String role,
-    List<String>? securityQuestions,
-    List<String>? securityAnswers,
-    String? therapistId,
-    String? assignedTherapist,
+    String? name,
+    String? role,
   }) async {
-    final emailKey = email.toLowerCase().trim();
-    if (_localAccounts.containsKey(emailKey)) {
-      return {'success': false, 'message': 'An account with this email already exists'};
+    try {
+      final result = await _backendApi.firebaseSync(
+        uid: uid,
+        email: email,
+        name: name,
+        role: role,
+      );
+      if (result['success'] != true) {
+        await _tokenService.clearToken();
+      }
+    } catch (_) {
+      await _tokenService.clearToken();
     }
-
-    final uid = 'local_${DateTime.now().microsecondsSinceEpoch}';
-    final now = DateTime.now().toIso8601String();
-    final hashedAnswers = securityAnswers
-            ?.map((a) => sha256.convert(utf8.encode(a.toLowerCase().trim())).toString())
-            .toList() ??
-        [];
-
-    final userData = {
-      'id': uid,
-      'email': email,
-      'name': name,
-      'role': role,
-      'createdAt': now,
-      'lastLogin': now,
-      'securityQuestions': securityQuestions ?? [],
-      'securityAnswers': hashedAnswers,
-      if (therapistId != null) 'therapistId': therapistId,
-      if (assignedTherapist != null) 'assignedTherapist': assignedTherapist,
-      'authProvider': 'local',
-    };
-
-    _localAccounts[emailKey] = {
-      ...userData,
-      'password': password,
-    };
-    _userCache[uid] = userData;
-    _currentRole = role;
-    _localUserId = uid;
-    _cachedUserData = userData;
-    await _saveLocalAccounts();
-    await _cacheLocally(uid, userData);
-
-    if (role == 'patient' && !kIsWeb) {
-      await _ensurePatientProfile(userId: uid, email: email, name: name);
-    }
-
-    return {
-      'success': true,
-      'userId': uid,
-      'role': role,
-      'token': 'local-session-token',
-    };
   }
 
   /// Signup with email and password
@@ -250,6 +192,8 @@ class AuthService {
         await _ensurePatientProfile(userId: uid, email: email, name: name);
       }
 
+      await _syncBackendToken(uid: uid, email: email, name: name, role: role);
+
       final token = await credential.user!.getIdToken();
       return {
         'success': true,
@@ -311,6 +255,13 @@ class AuthService {
         );
       }
 
+      await _syncBackendToken(
+        uid: uid,
+        email: email,
+        name: _cachedUserData!['name']?.toString(),
+        role: _currentRole,
+      );
+
       final token = await credential.user!.getIdToken();
       return {
         'success': true,
@@ -335,42 +286,6 @@ class AuthService {
     }
   }
 
-  Future<Map<String, dynamic>> _loginLocal({
-    required String email,
-    required String password,
-  }) async {
-    final account = _localAccounts[email.toLowerCase().trim()];
-    if (account == null) {
-      return {'success': false, 'message': 'Login failed'};
-    }
-
-    if ((account['password'] ?? '') != password) {
-      return {'success': false, 'message': 'Incorrect password'};
-    }
-
-    final uid = account['id']?.toString() ?? 'local_${email.hashCode.abs()}';
-    final userData = {
-      ...account,
-      'id': uid,
-      'lastLogin': DateTime.now().toIso8601String(),
-      'authProvider': 'local',
-    };
-
-    _localUserId = uid;
-    _currentRole = userData['role'] as String?;
-    _cachedUserData = userData;
-    _userCache[uid] = userData;
-    await _cacheLocally(uid, userData);
-
-    return {
-      'success': true,
-      'userId': uid,
-      'role': _currentRole,
-      'name': userData['name'],
-      'token': 'local-session-token',
-    };
-  }
-
   /// Logout
   Future<void> logout() async {
     final keys = _prefs.getKeys();
@@ -386,6 +301,8 @@ class AuthService {
     _cachedUserData = null;
     await _prefs.remove('current_role');
     await _prefs.remove('local_auth_session');
+    await _prefs.remove('local_auth_accounts');
+    await _tokenService.clearToken();
     try {
       await _auth.signOut();
     } catch (_) {}

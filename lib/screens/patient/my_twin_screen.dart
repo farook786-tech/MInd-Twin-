@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_card.dart';
+import '../../core/widgets/twin_chart.dart';
 import '../../services/auth_service.dart';
 import '../../services/wearable_sync_service.dart';
 import 'daily_checkin_screen.dart';
@@ -148,52 +149,21 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
     );
   }
 
-  Widget _legend(Color color, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildChartCard(List<_TwinPoint> points) {
     final sorted = List<_TwinPoint>.from(points)
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-    final moodSpots = <FlSpot>[];
-    final sleepSpots = <FlSpot>[];
-    final energySpots = <FlSpot>[];
-    final riskSpots = <FlSpot>[];
-
-    for (var i = 0; i < sorted.length; i++) {
-      final p = sorted[i];
-      if (p.moodScore != null) {
-        moodSpots.add(FlSpot(i.toDouble(), (p.moodScore! / 5.0) * 10.0));
-      }
-      if (p.sleepScore != null) {
-        sleepSpots.add(FlSpot(i.toDouble(), (p.sleepScore! / 4.0) * 10.0));
-      }
-      if (p.energyScore != null) {
-        energySpots.add(FlSpot(i.toDouble(), (p.energyScore! / 4.0) * 10.0));
-      }
-      if (p.riskScore != null) {
-        riskSpots.add(FlSpot(i.toDouble(), (p.riskScore! / 10.0).clamp(0.0, 10.0)));
-      }
-    }
+    final chartPoints = sorted
+        .map(
+          (p) => TwinChartPoint(
+            timestamp: p.timestamp,
+            mood: p.moodScore,
+            sleep: p.sleepScore,
+            energy: p.energyScore,
+            risk: p.riskScore,
+          ),
+        )
+        .toList();
 
     final selectedIndex = _selectedChartIndex != null &&
             _selectedChartIndex! >= 0 &&
@@ -201,13 +171,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
         ? _selectedChartIndex!
         : null;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.cardDark,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
+    return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -231,122 +195,15 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             ),
           ],
           const SizedBox(height: 12),
-          SizedBox(
+          TwinTrendChart(
+            points: chartPoints,
             height: 200,
-            child: LineChart(
-              LineChartData(
-                minX: 0,
-                maxX: sorted.length <= 1 ? 1 : (sorted.length - 1).toDouble(),
-                minY: 0,
-                maxY: 10,
-                clipData: const FlClipData.all(),
-                lineTouchData: LineTouchData(
-                  touchTooltipData: const LineTouchTooltipData(
-                    tooltipBgColor: Colors.black87,
-                  ),
-                  touchCallback: (event, response) {
-                    if (event is FlTapUpEvent || event is FlPanEndEvent) {
-                      if (response?.lineBarSpots == null || response!.lineBarSpots!.isEmpty) {
-                        return;
-                      }
-                      setState(() {
-                        _selectedChartIndex = response.lineBarSpots!.first.x.toInt();
-                      });
-                    }
-                  },
-                ),
-                gridData: FlGridData(
-                  show: true,
-                  horizontalInterval: 2,
-                  drawVerticalLine: false,
-                  getDrawingHorizontalLine: (_) => FlLine(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    strokeWidth: 1,
-                  ),
-                ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                ),
-                titlesData: FlTitlesData(
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: 2,
-                      reservedSize: 26,
-                      getTitlesWidget: (value, _) => Text(
-                        value.toInt().toString(),
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.65),
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: 1,
-                      getTitlesWidget: (value, _) {
-                        final index = value.toInt();
-                        if (index < 0 || index >= sorted.length) {
-                          return const SizedBox.shrink();
-                        }
-                        return Text(
-                          DateFormat('EEE').format(sorted[index].timestamp),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.68),
-                            fontSize: 10,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: moodSpots,
-                    isCurved: true,
-                    color: Colors.blue,
-                    barWidth: 2.5,
-                    dotData: const FlDotData(show: true),
-                  ),
-                  LineChartBarData(
-                    spots: sleepSpots,
-                    isCurved: true,
-                    color: Colors.green,
-                    barWidth: 2.5,
-                    dotData: const FlDotData(show: true),
-                  ),
-                  LineChartBarData(
-                    spots: energySpots,
-                    isCurved: true,
-                    color: Colors.purple,
-                    barWidth: 2.5,
-                    dotData: const FlDotData(show: true),
-                  ),
-                  LineChartBarData(
-                    spots: riskSpots,
-                    isCurved: true,
-                    color: Colors.orange,
-                    barWidth: 2.5,
-                    dotData: const FlDotData(show: true),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 14,
-            children: [
-              _legend(Colors.blue, 'Mood'),
-              _legend(Colors.green, 'Sleep'),
-              _legend(Colors.purple, 'Energy'),
-              _legend(Colors.orange, 'Risk'),
-            ],
+            selectedIndex: selectedIndex,
+            onPointSelected: (index) {
+              setState(() {
+                _selectedChartIndex = index;
+              });
+            },
           ),
           if (selectedIndex != null) ...[
             const SizedBox(height: 12),
@@ -461,28 +318,19 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.insights_outlined, size: 44, color: Colors.white54),
-            const SizedBox(height: 14),
-            const Text(
-              'Complete your first check-in to see your twin! 💙',
-              style: TextStyle(color: Colors.white70, fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const DailyCheckInScreen()),
-                );
-                _refreshStreams();
-              },
-              icon: const Icon(Icons.playlist_add_check_rounded),
-              label: const Text('Start Check-in'),
-            ),
-          ],
+        child: EmptyState(
+          emoji: '🧬',
+          message: 'Complete your first check-in to see your twin! 💙',
+          action: ElevatedButton.icon(
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DailyCheckInScreen()),
+              );
+              _refreshStreams();
+            },
+            icon: const Icon(Icons.playlist_add_check_rounded),
+            label: const Text('Start Check-in'),
+          ),
         ),
       ),
     );
@@ -548,28 +396,14 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting &&
                   !snapshot.hasData) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.cardDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                  ),
-                  child: const Center(child: CircularProgressIndicator()),
-                );
+                return const AppCard(child: Center(child: CircularProgressIndicator()));
               }
 
               if (snapshot.hasError && !snapshot.hasData) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.cardDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                  ),
+                return const AppCard(
                   child: Text(
                     'Risk score unavailable right now.',
-                    style: const TextStyle(color: Colors.white70),
+                    style: TextStyle(color: Colors.white70),
                   ),
                 );
               }
@@ -578,25 +412,11 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
               final latestPoint = _latestPointFromDocs(docs);
               final riskScore = latestPoint?.riskScore;
 
-              return Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.cardDark,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                ),
-                child: Center(child: _buildRiskGauge(riskScore)),
-              );
+              return AppCard(child: Center(child: _buildRiskGauge(riskScore)));
             },
           ),
           const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.cardDark,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
+          AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -633,14 +453,8 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting &&
                   !snapshot.hasData) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.cardDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                  ),
-                  child: const Text(
+                return const AppCard(
+                  child: Text(
                     'Loading latest clinical assessment...',
                     style: TextStyle(color: Colors.white70),
                   ),
@@ -648,14 +462,8 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
               }
 
               if (snapshot.hasError && !snapshot.hasData) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.cardDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                  ),
-                  child: const Text(
+                return const AppCard(
+                  child: Text(
                     'Clinical assessment unavailable.',
                     style: TextStyle(color: Colors.white70),
                   ),
@@ -679,13 +487,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
               final phq9 = _toDouble(latestAssessment['phq9Score']);
               final gad7 = _toDouble(latestAssessment['gad7Score']);
 
-              return Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.cardDark,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                ),
+              return AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -706,13 +508,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             },
           ),
           const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.cardDark,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
+          AppCard(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -762,13 +558,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.cardDark,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
+          AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

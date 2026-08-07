@@ -1,13 +1,18 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const DatabaseService = require('../database/Database');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 const db = DatabaseService.getInstance();
 
+// Returns true when the authenticated caller may write a check-in/appointment
+// for the given patient external id (their own Firebase UID for patients).
+const canActForPatient = (req, patientExternalId) =>
+  patientExternalId === req.userId || req.userRole === 'therapist' || req.userRole === 'admin';
+
 // Public sync endpoint for patient app check-ins using clinic code.
-router.post('/public/checkin', (req, res) => {
+router.post('/public/checkin', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const {
@@ -34,6 +39,10 @@ router.post('/public/checkin', (req, res) => {
 
     if (!clinicCode || !patientExternalId) {
       return res.status(400).json({ error: 'clinicCode and patientExternalId are required' });
+    }
+
+    if (!canActForPatient(req, patientExternalId)) {
+      return res.status(403).json({ error: 'Access denied to this patient check-in' });
     }
 
     const id = uuidv4();
@@ -83,7 +92,7 @@ router.post('/public/checkin', (req, res) => {
 });
 
 // Therapist dashboard fetch endpoint using shared clinic code.
-router.get('/public/therapist-dashboard', (req, res) => {
+router.get('/public/therapist-dashboard', authMiddleware, requireRole(['therapist', 'admin']), (req, res) => {
   try {
     const database = db.getDB();
     const clinicCode = req.query.clinicCode;
@@ -143,7 +152,7 @@ router.get('/public/therapist-dashboard', (req, res) => {
   }
 });
 
-router.post('/public/appointments/book', (req, res) => {
+router.post('/public/appointments/book', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const {
@@ -161,6 +170,10 @@ router.post('/public/appointments/book', (req, res) => {
 
     if (!clinicCode || !patientExternalId || !scheduledAt) {
       return res.status(400).json({ error: 'clinicCode, patientExternalId, and scheduledAt are required' });
+    }
+
+    if (!canActForPatient(req, patientExternalId)) {
+      return res.status(403).json({ error: 'Access denied to this patient appointment' });
     }
 
     const id = uuidv4();
@@ -194,7 +207,7 @@ router.post('/public/appointments/book', (req, res) => {
   }
 });
 
-router.get('/public/appointments', (req, res) => {
+router.get('/public/appointments', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const clinicCode = req.query.clinicCode;
@@ -202,6 +215,11 @@ router.get('/public/appointments', (req, res) => {
 
     if (!clinicCode) {
       return res.status(400).json({ error: 'clinicCode query parameter is required' });
+    }
+
+    // Patients may only view their own appointments.
+    if (req.userRole === 'patient' && patientExternalId !== req.userId) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     let rows = [];
@@ -226,7 +244,7 @@ router.get('/public/appointments', (req, res) => {
   }
 });
 
-router.post('/public/treatment-plans/send', (req, res) => {
+router.post('/public/treatment-plans/send', authMiddleware, requireRole(['therapist', 'admin']), (req, res) => {
   try {
     const database = db.getDB();
     const {
@@ -283,7 +301,7 @@ router.post('/public/treatment-plans/send', (req, res) => {
   }
 });
 
-router.get('/public/treatment-plans', (req, res) => {
+router.get('/public/treatment-plans', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const clinicCode = req.query.clinicCode;
@@ -291,6 +309,11 @@ router.get('/public/treatment-plans', (req, res) => {
 
     if (!clinicCode) {
       return res.status(400).json({ error: 'clinicCode query parameter is required' });
+    }
+
+    // Patients may only view their own treatment plans.
+    if (req.userRole === 'patient' && patientExternalId !== req.userId) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     let rows = [];
@@ -327,7 +350,7 @@ router.get('/public/treatment-plans', (req, res) => {
   }
 });
 
-router.post('/public/chat/send', (req, res) => {
+router.post('/public/chat/send', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const {
@@ -343,6 +366,15 @@ router.post('/public/chat/send', (req, res) => {
 
     if (!clinicCode || !senderId || !receiverId || !body) {
       return res.status(400).json({ error: 'clinicCode, senderId, receiverId, and body are required' });
+    }
+
+    // Prevent impersonation: users may only send messages as themselves.
+    // (Legacy therapist-main account is allowed for therapist callers.)
+    const canSendAs =
+      senderId === req.userId ||
+      (req.userRole === 'therapist' && senderId === 'therapist_main');
+    if (!canSendAs) {
+      return res.status(403).json({ error: 'Access denied: cannot send as another user' });
     }
 
     const messageId = id || uuidv4();
@@ -371,7 +403,7 @@ router.post('/public/chat/send', (req, res) => {
   }
 });
 
-router.get('/public/chat/messages', (req, res) => {
+router.get('/public/chat/messages', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const clinicCode = req.query.clinicCode;
@@ -380,6 +412,14 @@ router.get('/public/chat/messages', (req, res) => {
 
     if (!clinicCode || !userA || !userB) {
       return res.status(400).json({ error: 'clinicCode, userA, and userB are required' });
+    }
+
+    // Only participants (or therapists/admins) may read a conversation.
+    const isParticipant =
+      req.userRole === 'therapist' || req.userRole === 'admin' ||
+      req.userId === userA || req.userId === userB;
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Access denied to this conversation' });
     }
 
     const rows = database.prepare(`
@@ -579,13 +619,22 @@ router.get('/pull', authMiddleware, (req, res) => {
 });
 
 // Mark appointment as seen by patient
-router.post('/public/appointments/mark-seen', (req, res) => {
+router.post('/public/appointments/mark-seen', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const { clinicCode, appointmentId } = req.body;
 
     if (!clinicCode || !appointmentId) {
       return res.status(400).json({ error: 'clinicCode and appointmentId are required' });
+    }
+
+    if (req.userRole === 'patient') {
+      const row = database.prepare(`
+        SELECT patient_external_id FROM shared_appointments WHERE id = ?
+      `).get(appointmentId);
+      if (!row || row.patient_external_id !== req.userId) {
+        return res.status(403).json({ error: 'Access denied to this appointment' });
+      }
     }
 
     const now = new Date().toISOString();
@@ -603,13 +652,22 @@ router.post('/public/appointments/mark-seen', (req, res) => {
 });
 
 // Mark appointment as accepted by patient
-router.post('/public/appointments/mark-accepted', (req, res) => {
+router.post('/public/appointments/mark-accepted', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const { clinicCode, appointmentId } = req.body;
 
     if (!clinicCode || !appointmentId) {
       return res.status(400).json({ error: 'clinicCode and appointmentId are required' });
+    }
+
+    if (req.userRole === 'patient') {
+      const row = database.prepare(`
+        SELECT patient_external_id FROM shared_appointments WHERE id = ?
+      `).get(appointmentId);
+      if (!row || row.patient_external_id !== req.userId) {
+        return res.status(403).json({ error: 'Access denied to this appointment' });
+      }
     }
 
     const now = new Date().toISOString();
@@ -627,13 +685,22 @@ router.post('/public/appointments/mark-accepted', (req, res) => {
 });
 
 // Mark treatment plan as seen by patient
-router.post('/public/treatment-plans/mark-seen', (req, res) => {
+router.post('/public/treatment-plans/mark-seen', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const { clinicCode, planId } = req.body;
 
     if (!clinicCode || !planId) {
       return res.status(400).json({ error: 'clinicCode and planId are required' });
+    }
+
+    if (req.userRole === 'patient') {
+      const row = database.prepare(`
+        SELECT patient_external_id FROM shared_treatment_plans WHERE id = ?
+      `).get(planId);
+      if (!row || row.patient_external_id !== req.userId) {
+        return res.status(403).json({ error: 'Access denied to this treatment plan' });
+      }
     }
 
     const now = new Date().toISOString();
@@ -651,13 +718,22 @@ router.post('/public/treatment-plans/mark-seen', (req, res) => {
 });
 
 // Mark treatment plan as accepted by patient
-router.post('/public/treatment-plans/mark-accepted', (req, res) => {
+router.post('/public/treatment-plans/mark-accepted', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const { clinicCode, planId } = req.body;
 
     if (!clinicCode || !planId) {
       return res.status(400).json({ error: 'clinicCode and planId are required' });
+    }
+
+    if (req.userRole === 'patient') {
+      const row = database.prepare(`
+        SELECT patient_external_id FROM shared_treatment_plans WHERE id = ?
+      `).get(planId);
+      if (!row || row.patient_external_id !== req.userId) {
+        return res.status(403).json({ error: 'Access denied to this treatment plan' });
+      }
     }
 
     const now = new Date().toISOString();
@@ -675,13 +751,22 @@ router.post('/public/treatment-plans/mark-accepted', (req, res) => {
 });
 
 // Mark message as read by patient
-router.post('/public/messages/mark-read', (req, res) => {
+router.post('/public/messages/mark-read', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const { clinicCode, messageId } = req.body;
 
     if (!clinicCode || !messageId) {
       return res.status(400).json({ error: 'clinicCode and messageId are required' });
+    }
+
+    if (req.userRole === 'patient') {
+      const row = database.prepare(`
+        SELECT sender_external_id, receiver_external_id FROM shared_messages WHERE id = ?
+      `).get(messageId);
+      if (!row || (row.sender_external_id !== req.userId && row.receiver_external_id !== req.userId)) {
+        return res.status(403).json({ error: 'Access denied to this message' });
+      }
     }
 
     const now = new Date().toISOString();

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/ml_anomaly_service.dart';
 import '../../services/ml_risk_service.dart';
@@ -14,7 +15,12 @@ import 'safety_resources_screen.dart';
 import 'thought_dump_screen.dart';
 
 class DailyCheckInScreen extends StatefulWidget {
-  const DailyCheckInScreen({super.key});
+  /// When true the screen is rendered inside the patient home tab stack and
+  /// must not pop itself out of the navigator.
+  final bool embedded;
+  final void Function(int index)? onNavigateTab;
+
+  const DailyCheckInScreen({super.key, this.embedded = false, this.onNavigateTab});
 
   @override
   State<DailyCheckInScreen> createState() => _DailyCheckInScreenState();
@@ -1329,20 +1335,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         ),
         const SizedBox(height: 14),
         ...activities.map(
-          (activity) => Container(
+          (activity) => AppCard(
             margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              color: AppTheme.cardDark.withValues(alpha: 0.88),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.primaryIndigo.withValues(alpha: 0.08),
-                  blurRadius: 10,
-                ),
-              ],
-            ),
+            color: AppTheme.cardDark.withValues(alpha: 0.88),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1449,7 +1444,11 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
           width: double.infinity,
           child: ElevatedButton(
             onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyTwinScreen()));
+              if (widget.embedded) {
+                widget.onNavigateTab?.call(2);
+              } else {
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyTwinScreen()));
+              }
             },
             child: const Text('View My Twin'),
           ),
@@ -1458,7 +1457,13 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              if (widget.embedded) {
+                widget.onNavigateTab?.call(0);
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
             child: const Text('Back to Home'),
           ),
         ),
@@ -1492,15 +1497,18 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         appBar: AppBar(
           backgroundColor: AppTheme.backgroundDark,
           elevation: 0,
-          leading: IconButton(
-            onPressed: () async {
-              final canPop = await _handleBackTap();
-              if (canPop && mounted) {
-                Navigator.of(context).pop();
-              }
-            },
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          ),
+          automaticallyImplyLeading: false,
+          leading: widget.embedded
+              ? null
+              : IconButton(
+                  onPressed: () async {
+                    final canPop = await _handleBackTap();
+                    if (canPop && mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                ),
           title: const Text('Ally Check-In', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
         ),
         body: Container(

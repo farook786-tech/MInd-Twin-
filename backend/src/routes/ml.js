@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const { authMiddleware, canAccessPatient } = require('../middleware/auth');
 const router = express.Router();
 
 const ML_BASE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000';
@@ -68,12 +69,17 @@ function hasAny(text, patterns) {
  * If the ML service is down, returns { available: false } so the
  * client can fall back to local detection.
  */
-router.post('/predict', async (req, res) => {
+router.post('/predict', authMiddleware, async (req, res) => {
   try {
     const { text, patientId, recentHistory } = req.body;
 
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ success: false, error: 'text is required' });
+    }
+
+    // Patients may only run predictions for their own history.
+    if (patientId && !canAccessPatient(req, patientId)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
     let modelResult;

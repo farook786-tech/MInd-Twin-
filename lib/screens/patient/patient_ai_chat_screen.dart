@@ -6,6 +6,7 @@ import '../../services/backend_api_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/gemini_service.dart';
 import '../../services/ml_sentiment_service.dart';
+import '../../services/patient_memory_service.dart';
 import 'safety_resources_screen.dart';
 
 class PatientAIChatScreen extends StatefulWidget {
@@ -73,7 +74,8 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
             'You are Ally, a compassionate AI mental health companion. '
             'You are warm, supportive and professional. Never give medical advice. '
             'Always encourage professional help for serious issues. '
-            'Keep responses under 100 words.',
+            'Keep responses under 100 words.'
+            '${await PatientMemoryService().buildContext(patientId: widget.patientId, currentMessage: messageText)}',
         userPrompt: messageText,
         history: history.take(6).toList(),
         maxWords: 100,
@@ -226,10 +228,19 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
       if (!mounted) return;
 
       if (action == true) {
+        final sent = await _backendApi.sendSosAlert({
+          'patientId': widget.patientId,
+          'description': 'Patient requested immediate therapist contact during a critical conversation.',
+        });
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Your therapist has been alerted immediately.'),
-            backgroundColor: AppTheme.riskRed,
+          SnackBar(
+            content: Text(
+              sent
+                  ? 'Your therapist has been alerted immediately.'
+                  : 'Alert queued. Please use the crisis helpline below for immediate support.',
+            ),
+            backgroundColor: sent ? AppTheme.riskRed : AppTheme.warningAmber,
           ),
         );
       } else {

@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const DatabaseService = require('../database/Database');
 const { authMiddleware } = require('../middleware/auth');
@@ -86,6 +87,11 @@ router.post('/login', (req, res) => {
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Firebase-backed accounts authenticate through Firebase, not passwords.
+    if (user.auth_provider === 'firebase') {
+      return res.status(401).json({ error: 'This account uses Firebase sign-in. Please sign in from the app.' });
     }
 
     const validPassword = bcrypt.compareSync(password, user.password_hash);
@@ -188,33 +194,45 @@ router.post('/register-therapist', authMiddleware, (req, res) => {
 // Firebase Token Exchange & Account Sync Endpoint
 router.post('/firebase-sync', (req, res) => {
   try {
-    const { uid, email, name, role = 'patient' } = req.body;
+    const { uid, email, name, role } = req.body;
 
     if (!uid || !email) {
       return res.status(400).json({ error: 'Firebase uid and email required' });
     }
 
     const database = db.getDB();
+
+    // SECURITY: Never trust a client-supplied role for privilege escalation.
+    // New accounts may only be provisioned as 'patient' or 'therapist'
+    // (never 'admin'), and existing accounts never change role through sync.
+    const allowedRoles = new Set(['patient', 'therapist']);
+    const requestedRole = allowedRoles.has(role) ? role : 'patient';
+
     let user = database.prepare('SELECT * FROM users WHERE id = ? OR email = ?').get(uid, email.toLowerCase());
 
     if (!user) {
-      // Create user record for Firebase user in local DB if not present
-      const passwordHash = bcrypt.hashSync(uid + '_firebase_secret', 10);
+      // Create user record for Firebase user in local DB if not present.
+      // Use a random unguessable password so the deterministic
+      // bcrypt(uid + '_firebase_secret') backdoor cannot be used to log in.
+      const passwordHash = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
       const stmt = database.prepare(`
-        INSERT INTO users (id, email, password_hash, name, role)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO users (id, email, password_hash, name, role, auth_provider)
+        VALUES (?, ?, ?, ?, ?, 'firebase')
       `);
-      stmt.run(uid, email.toLowerCase(), passwordHash, name || email.split('@')[0], role);
+      stmt.run(uid, email.toLowerCase(), passwordHash, name || email.split('@')[0], requestedRole);
 
-      if (role === 'patient') {
-        const patientStmt = database.prepare('INSERT INTO patients (id, user_id) VALUES (?, ?)');
-        patientStmt.run(uuidv4(), uid);
+      const patientStmt = database.prepare('INSERT INTO patients (id, user_id) VALUES (?, ?)');
+      patientStmt.run(uuidv4(), uid);
 
-        const privacyStmt = database.prepare('INSERT INTO privacy_settings (id, user_id) VALUES (?, ?)');
-        privacyStmt.run(uuidv4(), uid);
-      }
+      const privacyStmt = database.prepare('INSERT INTO privacy_settings (id, user_id) VALUES (?, ?)');
+      privacyStmt.run(uuidv4(), uid);
 
-      user = { id: uid, email: email.toLowerCase(), role, name: name || email.split('@')[0] };
+      user = { id: uid, email: email.toLowerCase(), role: requestedRole, name: name || email.split('@')[0] };
+    }
+
+    // Never allow a client to escalate an existing account's role.
+    if (!allowedRoles.has(user.role)) {
+      return res.status(403).json({ error: 'Account role cannot be provisioned through sync' });
     }
 
     const token = generateToken(user.id, user.role);
