@@ -6,19 +6,14 @@ echo "================================"
 
 # Check if Node.js is installed
 if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is not installed. Please install Node.js 14+ first."
+    echo "❌ Node.js is not installed. Please install Node.js 20+ first."
     exit 1
 fi
 
 echo "✅ Node.js version: $(node --version)"
 
-# Navigate to backend directory
-if [ ! -d "mindtwin-backend" ]; then
-    echo "❌ mindtwin-backend directory not found!"
-    exit 1
-fi
-
-cd mindtwin-backend
+# Use this script's own directory (backend/)
+cd "$(dirname "$0")"
 
 # Install dependencies
 if [ ! -d "node_modules" ]; then

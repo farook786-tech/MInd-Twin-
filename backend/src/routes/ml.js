@@ -1,7 +1,12 @@
 const express = require('express');
 const axios = require('axios');
+const DatabaseService = require('../database/Database');
 const { authMiddleware, canAccessPatient } = require('../middleware/auth');
+const TokenBucketMiddleware = require('../middleware/TokenBucketMiddleware');
 const router = express.Router();
+
+// AI endpoints proxy to paid external providers; cap usage per authenticated user.
+const aiRateLimit = TokenBucketMiddleware({ capacity: 20, windowMs: 60 * 60 * 1000 });
 
 const ML_BASE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000';
 const ML_TIMEOUT_MS = 1500;
@@ -69,7 +74,7 @@ function hasAny(text, patterns) {
  * If the ML service is down, returns { available: false } so the
  * client can fall back to local detection.
  */
-router.post('/predict', authMiddleware, async (req, res) => {
+router.post('/predict', authMiddleware, aiRateLimit, async (req, res) => {
   try {
     const { text, patientId, recentHistory } = req.body;
 
@@ -134,6 +139,114 @@ router.post('/predict', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[ML bridge] Error:', error);
     res.status(500).json({ success: false, error: 'ML bridge error' });
+  }
+});
+
+// Confidence for a stored recommendation based on its evidence level.
+function confidenceForEvidence(evidenceLevel) {
+  const level = String(evidenceLevel || '').trim().toUpperCase();
+  if (level.startsWith('A')) return 0.9;
+  if (level.startsWith('B')) return 0.75;
+  return 0.6;
+}
+
+// Evidence-based default interventions ranked from a patient's latest scores.
+function defaultInterventions(wellbeingScore, moodScore) {
+  const wellbeing = wellbeingScore ?? 70;
+  const mood = moodScore ?? 5;
+
+  const list = [];
+  if (wellbeing < 50 || mood < 4) {
+    list.push({
+      title: 'Crisis safety planning',
+      description: 'Co-create a personalized safety plan with emergency contacts and coping strategies.',
+      confidence: 0.92,
+    });
+  }
+  list.push({
+    title: 'Cognitive behavioral therapy (CBT)',
+    description: 'Weekly CBT sessions focused on thought restructuring and behavioral activation.',
+    confidence: 0.86,
+  });
+  list.push({
+    title: 'Daily mood & wellbeing journaling',
+    description: 'Guided daily check-ins to track mood, sleep, and anxiety trends over time.',
+    confidence: 0.78,
+  });
+  if (wellbeing < 70) {
+    list.push({
+      title: 'Sleep hygiene coaching',
+      description: 'Personalized sleep schedule and relaxation routine to improve rest quality.',
+      confidence: 0.72,
+    });
+  }
+  list.push({
+    title: 'Peer support group',
+    description: 'Weekly moderated support group for shared experiences and social connection.',
+    confidence: 0.64,
+  });
+  return list;
+}
+
+/**
+ * POST /api/ml/recommend-intervention
+ * Returns the top 3 evidence-based interventions for a patient, preferring
+ * stored therapist-authored recommendations when they exist.
+ */
+router.post('/recommend-intervention', authMiddleware, aiRateLimit, async (req, res) => {
+  try {
+    const { patientId } = req.body;
+
+    if (!patientId) {
+      return res.status(400).json({ success: false, error: 'patientId is required' });
+    }
+
+    if (!canAccessPatient(req, patientId)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const database = DatabaseService.getInstance().getDB();
+
+    // Clients may pass the internal patient id or the Firebase UID.
+    const patient = database.prepare(
+      'SELECT * FROM patients WHERE id = ? OR user_id = ? LIMIT 1'
+    ).get(patientId, patientId);
+
+    const interventions = [];
+
+    if (patient) {
+      const stored = database.prepare(
+        'SELECT * FROM intervention_recommendations WHERE patient_id = ? ORDER BY created_at DESC'
+      ).all(patient.id);
+
+      for (const rec of stored) {
+        interventions.push({
+          title: rec.recommendation_type,
+          description: rec.description,
+          confidence: confidenceForEvidence(rec.evidence_level),
+          evidence_level: rec.evidence_level,
+        });
+      }
+
+      if (interventions.length === 0) {
+        const latest = database.prepare(
+          'SELECT * FROM daily_logs WHERE patient_id = ? ORDER BY created_at DESC LIMIT 1'
+        ).get(patient.id);
+        const wellbeing = latest?.wellbeing_score ?? patient.wellbeing_score ?? 70;
+        const mood = latest?.mood_score ?? 5;
+        interventions.push(...defaultInterventions(wellbeing, mood));
+      }
+    } else {
+      interventions.push(...defaultInterventions(70, 5));
+    }
+
+    res.json({
+      success: true,
+      topRecommendations: interventions.slice(0, 3),
+    });
+  } catch (error) {
+    console.error('[ML bridge] recommend-intervention error:', error);
+    res.status(500).json({ success: false, error: 'Intervention recommendation failed' });
   }
 });
 

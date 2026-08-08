@@ -113,14 +113,14 @@ class AppEntryScreen extends StatelessWidget {
 
     if (authService.currentRole == 'patient') {
       if (!AppConfig.patientAccessEnabled) {
-        return const TherapistAuthScreen();
+        return const AppModeMismatchScreen(currentRole: 'patient');
       }
       return const PatientHomeScreen();
     }
 
     if (authService.currentRole == 'therapist') {
       if (!AppConfig.therapistAccessEnabled) {
-        return const PatientAuthScreen();
+        return const AppModeMismatchScreen(currentRole: 'therapist');
       }
       return const TherapistDashboardScreen();
     }
@@ -129,6 +129,67 @@ class AppEntryScreen extends StatelessWidget {
     return AppConfig.patientAccessEnabled
         ? const PatientAuthScreen()
         : const TherapistAuthScreen();
+  }
+}
+
+/// Shown when the authenticated user's role is not included in this build's
+/// APP_MODE. Previously the app bounced them to the other role's login screen
+/// forever; now they get a clear explanation and a way to sign out.
+class AppModeMismatchScreen extends StatelessWidget {
+  final String currentRole;
+
+  const AppModeMismatchScreen({super.key, required this.currentRole});
+
+  Future<void> _signOut(BuildContext context) async {
+    await AuthService().logout();
+    if (!context.mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final disabledRole = currentRole == 'patient' ? 'therapist' : 'patient';
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundDark,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('⚠️', style: TextStyle(fontSize: 56)),
+              const SizedBox(height: 16),
+              Text(
+                '${currentRole[0].toUpperCase()}${currentRole.substring(1)} '
+                'access is disabled in this build',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'This app was built in ${AppConfig.modeLabel} mode '
+                '(--dart-define=APP_MODE=${AppConfig.modeLabel}), which '
+                'intentionally hides $disabledRole access. Sign out to '
+                'switch roles.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => _signOut(context),
+                child: const Text('Sign Out'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -1,7 +1,11 @@
 const express = require('express');
 const axios = require('axios');
 const { authMiddleware } = require('../middleware/auth');
+const TokenBucketMiddleware = require('../middleware/TokenBucketMiddleware');
 const router = express.Router();
+
+// AI endpoints proxy to paid external providers; cap usage per authenticated user.
+const aiRateLimit = TokenBucketMiddleware({ capacity: 20, windowMs: 60 * 60 * 1000 });
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
@@ -45,7 +49,7 @@ function mapHistory(history = []) {
  * Body: { prompt: string, systemPrompt?: string, history?: string[] }
  * Response: { success: true, response: string }
  */
-router.post('/chat', authMiddleware, async (req, res) => {
+router.post('/chat', authMiddleware, aiRateLimit, async (req, res) => {
   try {
     const { prompt, systemPrompt, history } = req.body;
 
@@ -76,9 +80,12 @@ router.post('/chat', authMiddleware, async (req, res) => {
     }
 
     const response = await axios.post(
-      `${GEMINI_ENDPOINT}/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      `${GEMINI_ENDPOINT}/${GEMINI_MODEL}:generateContent`,
       body,
-      { timeout: 20000 }
+      {
+        headers: { 'x-goog-api-key': GEMINI_API_KEY },
+        timeout: 20000,
+      }
     );
 
     const text =
@@ -90,7 +97,12 @@ router.post('/chat', authMiddleware, async (req, res) => {
     res.json({ success: true, response: text || FALLBACK_TEXT });
   } catch (error) {
     console.error('[Gemini] Error:', error.message);
-    res.json({ success: true, response: FALLBACK_TEXT });
+    // Never echo provider internals; keep the client informed with a real error
+    // status instead of masking failures as HTTP 200.
+    res.status(502).json({
+      success: false,
+      error: 'Upstream model request failed. Please try again.',
+    });
   }
 });
 

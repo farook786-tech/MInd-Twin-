@@ -48,8 +48,6 @@ void main() {
       else if (predicted && !actual) fp++;
       else if (!predicted && !actual) tn++;
       else if (!predicted && actual) fn++;
-
-      print('${actual ? "CRISIS" : "SAFE  "} | predicted=${predicted ? "CRISIS" : "SAFE  "} | "${example['text']}"');
     }
 
     final accuracy = (tp + tn) / testSet.length;
@@ -57,11 +55,13 @@ void main() {
     final recall = tp + fn == 0 ? 0.0 : tp / (tp + fn);
     final f1 = (precision + recall) == 0 ? 0.0 : 2 * (precision * recall) / (precision + recall);
 
-    print('\n--- Crisis Detection Evaluation Results ---');
-    print('TP=$tp  FP=$fp  TN=$tn  FN=$fn');
-    print('Accuracy:  ${(accuracy * 100).toStringAsFixed(2)}%');
-    print('Precision: ${(precision * 100).toStringAsFixed(2)}%');
-    print('Recall:    ${(recall * 100).toStringAsFixed(2)}%');
-    print('F1-Score:  ${(f1 * 100).toStringAsFixed(2)}%');
+    // Performance bar: no false negatives, no false positives on the labeled set.
+    expect(fn, 0, reason: 'Crisis phrases must never be missed');
+    expect(fp, 0, reason: 'Routine phrases must not be flagged as crisis');
+    expect(accuracy, greaterThanOrEqualTo(0.9));
+    expect(precision, greaterThanOrEqualTo(0.9));
+    expect(recall, greaterThanOrEqualTo(0.9));
+    expect(f1, greaterThanOrEqualTo(0.9));
   });
 }
+

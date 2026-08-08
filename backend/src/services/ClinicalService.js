@@ -153,30 +153,15 @@ class ClinicalService {
     const weeksPassed = Math.floor((currentDate - baselineDate) / (7 * 24 * 60 * 60 * 1000));
 
     const scoreChange = baselineAssessment.score - currentScore;
-    const responsePercentage = (scoreChange / baselineAssessment.score) * 100;
+    // Guard against a zero baseline: percentage change is undefined there.
+    const responsePercentage = baselineAssessment.score > 0
+      ? (scoreChange / baselineAssessment.score) * 100
+      : 0;
 
     // Clinical remission: 50% reduction from baseline or score ≤ 4
     const remissionStatus = currentScore <= 4 || responsePercentage >= 50
       ? 'remission'
       : responsePercentage >= 25 ? 'significant_progress' : 'minimal_progress';
-
-    // Calculate individual symptom changes
-    const baselineResponses = JSON.parse(baselineAssessment.score_responses || '[]');
-    const currentResponses = this.db.prepare(`
-      SELECT responses FROM phq9_assessments WHERE id = ?
-    `).get(currentAssessmentId);
-    
-    const symptoms = [
-      'Little interest in activities',
-      'Feeling sad/hopeless',
-      'Sleep disturbance',
-      'Fatigue/low energy',
-      'Appetite change',
-      'Feeling worthless',
-      'Concentration difficulty',
-      'Psychomotor disturbance',
-      'Suicidal ideation',
-    ];
 
     const responseId = uuidv4();
     this.db.prepare(`
@@ -513,24 +498,49 @@ class ClinicalService {
         severity: latestAssessment.severity,
         date: latestAssessment.assessment_date,
       } : null,
-      treatmentResponse: treatmentResponse ? JSON.parse(treatmentResponse) : null,
-      engagement: engagementMetrics ? JSON.parse(engagementMetrics) : null,
+      treatmentResponse: treatmentResponse ? {
+        baselinePhq9: treatmentResponse.baseline_phq9,
+        currentPhq9: treatmentResponse.current_phq9,
+        weeksSinceBaseline: treatmentResponse.weeks_since_baseline,
+        responsePercentage: treatmentResponse.response_percentage,
+        remissionStatus: treatmentResponse.remission_status,
+      } : null,
+      engagement: this._asObject(engagementMetrics),
       riskFactors: clinicalRiskFactors ? {
         severity: clinicalRiskFactors.severity_score,
         level: clinicalRiskFactors.risk_level,
-        factors: JSON.parse(clinicalRiskFactors.risk_factors),
+        factors: this._asObject(clinicalRiskFactors.risk_factors),
       } : null,
     };
+  }
+
+  /**
+   * Parses a value that may be a JSON string, a plain row object, or null.
+   * Returns the value itself for objects so callers never crash on
+   * JSON.parse of a non-string.
+   */
+  _asObject(value) {
+    if (value == null) return null;
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch (_) {
+        return null;
+      }
+    }
+    return value;
   }
 
   /**
    * Get Active Alerts For Therapist
    */
   getActiveAlerts(therapistId) {
+    // `patients` has no name column; patient display names live in `users`.
     return this.db.prepare(`
-      SELECT ca.*, p.name as patient_name
+      SELECT ca.*, u.name as patient_name
       FROM clinical_alerts ca
       JOIN patients p ON ca.patient_id = p.id
+      LEFT JOIN users u ON p.user_id = u.id
       WHERE ca.therapist_id = ? AND ca.status = 'active'
       ORDER BY ca.created_at DESC
     `).all(therapistId);

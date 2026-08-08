@@ -38,13 +38,26 @@ class DatabaseService {
 
     return await openDatabase(
       dbFile,
-      version: 3,
+      version: 5,
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
     );
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS pending_assessments (
+          id TEXT PRIMARY KEY,
+          patientId TEXT,
+          therapistId TEXT,
+          phq9Score INTEGER,
+          gad7Score INTEGER,
+          answers TEXT,
+          createdAt TEXT
+        )
+      ''');
+    }
     if (oldVersion < 2) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS messages (
@@ -146,6 +159,16 @@ class DatabaseService {
         )
       ''');
     }
+
+    if (oldVersion < 4) {
+      // Add read-receipt columns to existing message tables.
+      await db.execute(
+        'ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0',
+      ).catchError((_) {});
+      await db.execute(
+        'ALTER TABLE messages ADD COLUMN read_at TEXT',
+      ).catchError((_) {});
+    }
   }
 
   Future<void> _createTables(Database db, int version) async {
@@ -217,7 +240,9 @@ class DatabaseService {
         receiverId TEXT,
         body TEXT,
         timestamp TEXT,
-        status TEXT
+        status TEXT,
+        is_read INTEGER DEFAULT 0,
+        read_at TEXT
       )
     ''');
 
@@ -328,6 +353,58 @@ class DatabaseService {
         FOREIGN KEY (patientId) REFERENCES patients(id)
       )
     ''');
+
+    // Pending assessments queue (offline-first PHQ-9/GAD-7 submissions)
+    await db.execute('''
+      CREATE TABLE pending_assessments (
+        id TEXT PRIMARY KEY,
+        patientId TEXT,
+        therapistId TEXT,
+        phq9Score INTEGER,
+        gad7Score INTEGER,
+        answers TEXT,
+        createdAt TEXT
+      )
+    ''');
+  }
+
+  // ===== PENDING ASSESSMENT QUEUE =====
+  Future<void> queuePendingAssessment({
+    required String id,
+    required String patientId,
+    String? therapistId,
+    required int phq9Score,
+    required int gad7Score,
+    required Map<String, dynamic> answers,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'pending_assessments',
+      {
+        'id': id,
+        'patientId': patientId,
+        'therapistId': therapistId,
+        'phq9Score': phq9Score,
+        'gad7Score': gad7Score,
+        'answers': jsonEncode(answers),
+        'createdAt': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingAssessments() async {
+    final db = await database;
+    return db.query('pending_assessments', orderBy: 'createdAt ASC');
+  }
+
+  Future<void> deletePendingAssessment(String id) async {
+    final db = await database;
+    await db.delete(
+      'pending_assessments',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // ===== PATIENT OPERATIONS =====
@@ -551,6 +628,8 @@ class DatabaseService {
     required String body,
     required String timestamp,
     String status = 'sent',
+    int isRead = 0,
+    String? readAt,
   }) async {
     final db = await database;
     await db.insert(
@@ -562,6 +641,8 @@ class DatabaseService {
         'body': body,
         'timestamp': timestamp,
         'status': status,
+        'is_read': isRead,
+        'read_at': readAt,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -594,7 +675,7 @@ class DatabaseService {
     final db = await database;
     await db.update(
       'messages',
-      {'status': 'read'},
+      {'status': 'read', 'is_read': 1, 'read_at': DateTime.now().toIso8601String()},
       where: 'receiverId = ? AND senderId = ?',
       whereArgs: [userId, otherUserId],
     );

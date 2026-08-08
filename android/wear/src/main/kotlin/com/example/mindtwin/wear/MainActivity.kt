@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
                 val config = PassiveListenerConfig.builder()
                     .setDataTypes(setOf(DataType.HEART_RATE_BPM))
                     .build()
-                passiveMonitoringClient.registerPassiveListenerServiceAsync(
+                passiveMonitoringClient.setPassiveListenerServiceAsync(
                     PassiveDataService::class.java,
                     config
                 ).await()

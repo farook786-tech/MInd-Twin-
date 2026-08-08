@@ -14,7 +14,7 @@ const path = require('path');
  */
 class PDFReportService {
   constructor() {
-    this.db = new Database();
+    this.db = Database.getInstance();
     this.reportsDir = path.join(__dirname, '../../reports');
     this._ensureReportsDirectory();
   }

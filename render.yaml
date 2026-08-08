@@ -17,9 +17,28 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
       - key: DATABASE
         value: /var/data/mindtwin.db
+      # Point the crisis-detection bridge at the deployed ML service URL,
+      # e.g. https://mindtwin-ml.onrender.com (set when creating the service).
+      - key: ML_SERVICE_URL
+        sync: false
     disks:
       - name: mindtwin-data
         mountPath: /var/data
         sizeGB: 1
+
+  - type: web
+    name: mindtwin-ml
+    runtime: docker
+    rootDir: ml_service
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000

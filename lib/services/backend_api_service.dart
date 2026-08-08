@@ -1,7 +1,10 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'token_service.dart';
 
@@ -11,7 +14,9 @@ class BackendApiService {
   static const String _clinicCode =
       String.fromEnvironment('MINDTWIN_CLINIC_CODE', defaultValue: 'DEMO_CLINIC_001');
   static const String _manualBaseUrlKey = 'backend_base_url_manual';
-  
+
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
   late final TokenService _tokenService;
   String? _resolvedBaseUrl;
   
@@ -27,16 +32,43 @@ class BackendApiService {
 
   Future<void> setManualBaseUrl(String rawUrl) async {
     final normalized = _normalizeBaseUrl(rawUrl);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_manualBaseUrlKey, normalized);
+    await _storeManualBaseUrl(normalized);
     _resolvedBaseUrl = normalized;
   }
 
   Future<String?> getManualBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_manualBaseUrlKey);
+    final raw = await _readManualBaseUrl();
     if (raw == null || raw.trim().isEmpty) return null;
     return _normalizeBaseUrl(raw);
+  }
+
+  // Store the manually entered backend URL in the platform keychain/keystore
+  // (falls back to SharedPreferences on web where secure storage is unavailable).
+  Future<void> _storeManualBaseUrl(String url) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_manualBaseUrlKey, url);
+      return;
+    }
+    try {
+      await _secureStorage.write(key: _manualBaseUrlKey, value: url);
+    } catch (_) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_manualBaseUrlKey, url);
+    }
+  }
+
+  Future<String?> _readManualBaseUrl() async {
+    if (!kIsWeb) {
+      try {
+        final secure = await _secureStorage.read(key: _manualBaseUrlKey);
+        if (secure != null && secure.isNotEmpty) return secure;
+      } catch (_) {
+        // Fall through to SharedPreferences below.
+      }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_manualBaseUrlKey);
   }
 
   Future<bool> testConnection({String? baseUrl}) async {
@@ -92,34 +124,17 @@ class BackendApiService {
         includeLoopback: false,
       );
 
+      // Only test the device's own assigned addresses, never sweep the subnet.
       for (final interface in interfaces) {
         for (final addr in interface.addresses) {
           final ip = addr.address;
           if (ip.startsWith('127.')) continue;
-          final parts = ip.split('.');
-          if (parts.length != 4) continue;
-          final prefix = '${parts[0]}.${parts[1]}.${parts[2]}';
-          final host = int.tryParse(parts[3]) ?? 0;
-
           candidates.add('http://$ip:$port');
-
-          for (int delta = 1; delta <= 16; delta++) {
-            final low = host - delta;
-            final high = host + delta;
-            if (low >= 1 && low <= 254) {
-              candidates.add('http://$prefix.$low:$port');
-            }
-            if (high >= 1 && high <= 254) {
-              candidates.add('http://$prefix.$high:$port');
-            }
-          }
-
-          for (int i = 1; i <= 254; i++) {
-            candidates.add('http://$prefix.$i:$port');
-          }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Network interface enumeration failed: $e');
+    }
 
     final candidateList = candidates.toList();
     const batchSize = 24;
@@ -301,97 +316,7 @@ class BackendApiService {
     }
   }
 
-  Future<Map<String, dynamic>> loginRemote({
-    required String email,
-    required String password,
-  }) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) {
-      return {'success': false, 'message': 'Backend not configured'};
-    }
 
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': email,
-          'password': password,
-        }),
-      );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          final token = decoded['token']?.toString();
-          if (token != null && token.isNotEmpty) {
-            await _tokenService.storeToken(token);
-          }
-          return {
-            'success': true,
-            ...decoded,
-          };
-        }
-      }
-
-      return {
-        'success': false,
-        'message': 'Invalid credentials',
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Remote login failed: $e',
-      };
-    }
-  }
-
-  Future<Map<String, dynamic>> registerRemotePatient({
-    required String email,
-    required String password,
-    required String name,
-  }) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) {
-      return {'success': false, 'message': 'Backend not configured'};
-    }
-
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': email,
-          'password': password,
-          'name': name,
-        }),
-      );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          final token = decoded['token']?.toString();
-          if (token != null && token.isNotEmpty) {
-            await _tokenService.storeToken(token);
-          }
-          return {
-            'success': true,
-            ...decoded,
-          };
-        }
-      }
-
-      return {
-        'success': false,
-        'message': 'Remote registration failed',
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Remote registration failed: $e',
-      };
-    }
-  }
 
   Future<bool> sendMessage(Map<String, dynamic> payload) async {
     final baseUrl = await _resolveBaseUrl();
@@ -441,140 +366,12 @@ class BackendApiService {
   }
 
   /// Register FCM token with backend
-  Future<bool> registerFcmToken(String userId, String token) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/users/$userId/fcm-token'),
-        headers: headers,
-        body: jsonEncode({'token': token}),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (_) {
-      return false;
-    }
-  }
-
   /// Sync patient data to backend
-  Future<bool> syncPatientData(Map<String, dynamic> data) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/sync/patient-data'),
-        headers: headers,
-        body: jsonEncode(data),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Sync error: $e');
-      return false;
-    }
-  }
-
   /// Pull updates from backend
-  Future<Map<String, dynamic>> pullUpdates(DateTime since) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return {};
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/sync/pull?since=${since.toIso8601String()}'),
-        headers: headers,
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return {};
-    } catch (e) {
-      print('Pull error: $e');
-      return {};
-    }
-  }
-
   /// Create crisis alert on backend
-  Future<bool> createCrisisAlert(String patientId, Map<String, dynamic> alert) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/patients/$patientId/alerts'),
-        headers: headers,
-        body: jsonEncode(alert),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Alert creation error: $e');
-      return false;
-    }
-  }
-
   /// Add daily log to backend
-  Future<bool> addDailyLog(String patientId, Map<String, dynamic> log) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/patients/$patientId/daily-logs'),
-        headers: headers,
-        body: jsonEncode(log),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Log creation error: $e');
-      return false;
-    }
-  }
 
-  Future<bool> submitSharedCheckin(Map<String, dynamic> payload) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/sync/public/checkin'),
-        headers: headers,
-        body: jsonEncode({
-          'clinicCode': _clinicCode,
-          ...payload,
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Shared check-in sync error: $e');
-      return false;
-    }
-  }
 
-  Future<Map<String, dynamic>> fetchSharedTherapistDashboard({int limit = 80}) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return {};
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse(
-          '$baseUrl/api/sync/public/therapist-dashboard?clinicCode=$_clinicCode&limit=$limit',
-        ),
-        headers: headers,
-      );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          return decoded;
-        }
-      }
-      return {};
-    } catch (e) {
-      print('Therapist shared dashboard fetch error: $e');
-      return {};
-    }
-  }
 
   Future<bool> bookSharedAppointment(Map<String, dynamic> payload) async {
     final baseUrl = await _resolveBaseUrl();
@@ -784,58 +581,7 @@ class BackendApiService {
 
   // Clinical Assessment Methods
 
-  Future<Map<String, dynamic>> submitPHQ9Assessment({
-    required String patientId,
-    required String therapistId,
-    required List<int> responses,
-    String? notes,
-  }) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return {'success': false};
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/clinical/phq9'),
-        headers: headers,
-        body: jsonEncode({
-          'patientId': patientId,
-          'therapistId': therapistId,
-          'responses': responses,
-          'notes': notes,
-        }),
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return {'success': false};
-    } catch (e) {
-      print('PHQ9 submission error: $e');
-      return {'success': false};
-    }
-  }
 
-  Future<List<Map<String, dynamic>>> getAssessmentHistory(String patientId) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return const [];
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/clinical/assessment-history/$patientId'),
-        headers: headers,
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        if (data['assessments'] is List) {
-          return (data['assessments'] as List)
-              .cast<Map<String, dynamic>>();
-        }
-      }
-      return const [];
-    } catch (e) {
-      print('Assessment history error: $e');
-      return const [];
-    }
-  }
 
   Future<Map<String, dynamic>> getTreatmentSummary(String patientId) async {
     final baseUrl = await _resolveBaseUrl();
@@ -877,204 +623,13 @@ class BackendApiService {
     }
   }
 
-  Future<Map<String, dynamic>> getRiskFactors(String patientId) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return {};
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/clinical/risk-factors/$patientId'),
-        headers: headers,
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final data = jsonDecode(response.body);
-        return (data['riskFactors'] as Map).cast<String, dynamic>();
-      }
-      return {};
-    } catch (e) {
-      print('Risk factors error: $e');
-      return {};
-    }
-  }
 
-  Future<List<Map<String, dynamic>>> getClinicalAlerts(String therapistId) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return const [];
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/clinical/alerts/$therapistId'),
-        headers: headers,
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final data = jsonDecode(response.body);
-        if (data['alerts'] is List) {
-          return (data['alerts'] as List)
-              .cast<Map<String, dynamic>>();
-        }
-      }
-      return const [];
-    } catch (e) {
-      print('Clinical alerts error: $e');
-      return const [];
-    }
-  }
 
-  Future<bool> acknowledgeAlert(String alertId, {String? actionTaken}) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/clinical/alerts/$alertId/acknowledge'),
-        headers: headers,
-        body: jsonEncode({
-          'actionTaken': actionTaken,
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Acknowledge alert error: $e');
-      return false;
-    }
-  }
 
-  Future<bool> createIntervention({
-    required String patientId,
-    String? therapistId,
-    required String type,
-    required String evidenceLevel,
-    String? description,
-    List<String>? cbtInterventions,
-    List<String>? medicationSuggestions,
-    List<String>? lifestyleRecommendations,
-  }) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/clinical/interventions'),
-        headers: headers,
-        body: jsonEncode({
-          'patientId': patientId,
-          'therapistId': therapistId,
-          'type': type,
-          'evidenceLevel': evidenceLevel,
-          'description': description,
-          'cbtInterventions': cbtInterventions ?? [],
-          'medicationSuggestions': medicationSuggestions ?? [],
-          'lifestyleRecommendations': lifestyleRecommendations ?? [],
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Create intervention error: $e');
-      return false;
-    }
-  }
 
-  Future<List<Map<String, dynamic>>> getPatientInterventions(String patientId) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return const [];
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/clinical/interventions/$patientId'),
-        headers: headers,
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final data = jsonDecode(response.body);
-        if (data['interventions'] is List) {
-          return (data['interventions'] as List)
-              .cast<Map<String, dynamic>>();
-        }
-      }
-      return const [];
-    } catch (e) {
-      print('Get interventions error: $e');
-      return const [];
-    }
-  }
-
-  // ===== REAL-TIME WEARABLE DATA ENDPOINTS =====
-
-  /// Record real-time mood data from wearable device
   /// moodScore: 1 (very sad) to 10 (very happy)
-  Future<bool> recordMoodData(String patientId, int moodScore, {String? timestamp}) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/realtime/wearable/mood'),
-        headers: headers,
-        body: jsonEncode({
-          'patientId': patientId,
-          'moodScore': moodScore,
-          'timestamp': timestamp ?? DateTime.now().toIso8601String(),
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Record mood data error: $e');
-      return false;
-    }
-  }
-
-  /// Record real-time anxiety data from wearable device
   /// anxietyScore: 1 (calm) to 10 (severe)
-  Future<bool> recordAnxietyData(String patientId, int anxietyScore, {String? timestamp}) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/realtime/wearable/anxiety'),
-        headers: headers,
-        body: jsonEncode({
-          'patientId': patientId,
-          'anxietyScore': anxietyScore,
-          'timestamp': timestamp ?? DateTime.now().toIso8601String(),
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Record anxiety data error: $e');
-      return false;
-    }
-  }
-
-  /// Record real-time sleep data from wearable device
   /// sleepDuration: hours (0-12), sleepQuality: 1-10 scale
-  Future<bool> recordSleepData(
-    String patientId,
-    double sleepDuration,
-    int sleepQuality, {
-    String? timestamp,
-  }) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/realtime/wearable/sleep'),
-        headers: headers,
-        body: jsonEncode({
-          'patientId': patientId,
-          'sleepDuration': sleepDuration,
-          'sleepQuality': sleepQuality,
-          'timestamp': timestamp ?? DateTime.now().toIso8601String(),
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Record sleep data error: $e');
-      return false;
-    }
-  }
-
-  /// Record real-time heart rate data from wearable device
   /// heartRate: BPM (30-220), isResting: true for resting heart rate
   Future<bool> recordHeartRateData(
     String patientId,
@@ -1105,143 +660,11 @@ class BackendApiService {
 
   /// Record real-time activity data from wearable device
   /// steps: step count, activityMinutes: minutes active, caloriesBurned: estimated calories
-  Future<bool> recordActivityData(
-    String patientId,
-    int steps, {
-    int activityMinutes = 0,
-    double caloriesBurned = 0,
-    String? timestamp,
-  }) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/realtime/wearable/activity'),
-        headers: headers,
-        body: jsonEncode({
-          'patientId': patientId,
-          'steps': steps,
-          'activityMinutes': activityMinutes,
-          'caloriesBurned': caloriesBurned,
-          'timestamp': timestamp ?? DateTime.now().toIso8601String(),
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Record activity data error: $e');
-      return false;
-    }
-  }
-
-  /// Batch ingest multiple wearable data points
   /// dataPoints: [{ type: 'mood'|'anxiety'|'sleep'|'heartrate'|'activity', value, timestamp }]
-  Future<bool> ingestWearableBatch(String patientId, List<Map<String, dynamic>> dataPoints) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/realtime/wearable/batch'),
-        headers: headers,
-        body: jsonEncode({
-          'patientId': patientId,
-          'dataPoints': dataPoints,
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Ingest wearable batch error: $e');
-      return false;
-    }
-  }
-
   /// Get wearable data summary for patient (last 7 days)
-  Future<Map<String, dynamic>> getWearableSummary(String patientId) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return {};
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/realtime/wearable/summary/$patientId'),
-        headers: headers,
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final data = jsonDecode(response.body);
-        return (data['summary'] as Map?)?.cast<String, dynamic>() ?? {};
-      }
-      return {};
-    } catch (e) {
-      print('Get wearable summary error: $e');
-      return {};
-    }
-  }
-
-  // ===== NOTIFICATION ENDPOINTS =====
-
-  /// Register device token for FCM push notifications
   /// platform: 'android', 'ios', or 'web'
-  Future<bool> registerDeviceToken(String therapistId, String deviceToken, {String platform = 'android'}) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/realtime/notifications/register-device'),
-        headers: headers,
-        body: jsonEncode({
-          'therapistId': therapistId,
-          'deviceToken': deviceToken,
-          'platform': platform,
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Register device token error: $e');
-      return false;
-    }
-  }
-
   /// Send test alert notification (for configuration verification)
-  Future<bool> sendTestAlert(String therapistId, {String patientName = 'Test Patient'}) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/realtime/notifications/test-alert'),
-        headers: headers,
-        body: jsonEncode({
-          'therapistId': therapistId,
-          'patientName': patientName,
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Send test alert error: $e');
-      return false;
-    }
-  }
-
-  // ===== ENGAGEMENT REMINDER ENDPOINTS =====
-
   /// Trigger manual reminder for specific patient
-  Future<bool> triggerManualReminder(String patientId) async {
-    final baseUrl = await _resolveBaseUrl();
-    if (baseUrl == null) return false;
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/realtime/reminders/manual/$patientId'),
-        headers: headers,
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      print('Trigger manual reminder error: $e');
-      return false;
-    }
-  }
-
   /// Get reminder statistics for therapist
   Future<Map<String, dynamic>> getReminderStats(String therapistId) async {
     final baseUrl = await _resolveBaseUrl();
@@ -1265,6 +688,20 @@ class BackendApiService {
 
   // ===== REPORT GENERATION ENDPOINTS =====
 
+  /// Persist raw PDF bytes from the backend to the app documents directory.
+  Future<String?> _savePdfBytes(Uint8List bytes, String fileName) async {
+    if (kIsWeb) return null;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}${Platform.pathSeparator}$fileName');
+      await file.writeAsBytes(bytes);
+      return file.path;
+    } catch (e) {
+      print('Save PDF error: $e');
+      return null;
+    }
+  }
+
   /// Download comprehensive treatment outcome PDF report
   /// Returns file path if successful
   Future<String?> downloadTreatmentReport(String patientId, String therapistId) async {
@@ -1277,9 +714,10 @@ class BackendApiService {
         headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        // In real implementation, save PDF to file storage
-        // For now, return success indicator
-        return 'report_${patientId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+        return _savePdfBytes(
+          response.bodyBytes,
+          'report_${patientId}_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        );
       }
       return null;
     } catch (e) {
@@ -1299,7 +737,10 @@ class BackendApiService {
         headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        return 'progress_${patientId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+        return _savePdfBytes(
+          response.bodyBytes,
+          'progress_${patientId}_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        );
       }
       return null;
     } catch (e) {
@@ -1320,7 +761,10 @@ class BackendApiService {
         headers: headers,
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        return 'wearable_${patientId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+        return _savePdfBytes(
+          response.bodyBytes,
+          'wearable_${patientId}_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        );
       }
       return null;
     } catch (e) {

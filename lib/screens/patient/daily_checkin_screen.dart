@@ -148,7 +148,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       setState(() {
         _therapistId = therapistId;
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to load therapist id: $e');
+    }
   }
 
   bool _canProceedCurrentStage() {
@@ -358,7 +360,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         'status': 'open',
         'createdAt': FieldValue.serverTimestamp(),
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to create crisis alert from check-in: $e');
+    }
 
     if (!mounted) return;
     await Navigator.push(
@@ -464,7 +468,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Reminder set! 💙')),
         );
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to set reminder: $e');
+      }
     }
   }
 
@@ -697,15 +703,21 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
 
     try {
       sentimentResult = await _mlSentimentService.analyzeSentiment(moodTextForNlp);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Sentiment analysis failed: $e');
+    }
 
     try {
       riskPrediction = await _mlRiskService.predictRisk(patientId);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Risk prediction failed: $e');
+    }
 
     try {
       anomalyResult = await _mlAnomalyService.detectAnomaly(patientId);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Anomaly detection failed: $e');
+    }
 
     try {
       await dailyLogRef.set({
@@ -740,12 +752,16 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         'riskScore': finalRiskScore,
         'wellbeingScore': (100 - finalRiskScore).clamp(0.0, 100.0),
       }, SetOptions(merge: true));
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to save daily log with ML data: $e');
+    }
 
     int streak = 0;
     try {
       streak = await _calculateAndPersistStreak(patientId);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to calculate streak: $e');
+    }
 
     try {
       await _firestore.collection('users').doc(patientId).set({
@@ -757,7 +773,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         'lastCheckInAt': FieldValue.serverTimestamp(),
         'streak': streak,
       }, SetOptions(merge: true));
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to update user summary: $e');
+    }
 
     if (!mounted) return;
     setState(() {

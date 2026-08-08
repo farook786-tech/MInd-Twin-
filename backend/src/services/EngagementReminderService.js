@@ -9,7 +9,7 @@ const NotificationService = require('./NotificationService');
  */
 class EngagementReminderService {
   constructor() {
-    this.db = new Database();
+    this.db = Database.getInstance();
     this.notificationService = new NotificationService();
   }
 

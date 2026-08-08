@@ -100,7 +100,7 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
   }
 
   void _startRealtimeUpdates() {
-    _updateTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    _updateTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _loadThreads();
     });
   }

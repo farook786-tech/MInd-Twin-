@@ -43,9 +43,24 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Gradle caches and build state (never commit)
+android/.gradle/
+*.gradle.kts-e
+
+# Root package-lock.json is vestigial (no root package.json); backend keeps its own.
+/package-lock.json
+
 # Firebase
-# Keep Flutter Firebase config files tracked so web/mobile builds work.
-# /firebase_options.dart
+# firebase_options.dart is tracked on purpose (public config, required for builds).
+# Native Firebase config files are kept local (not committed).
 google-services.json
 GoogleService-Info.plist
 *.apk
+
+# Firebase service account (backend push notifications) - NEVER commit.
+firebase-service-account*.json
+
+# Python / ML service
+venv/
+__pycache__/
+*.pkl

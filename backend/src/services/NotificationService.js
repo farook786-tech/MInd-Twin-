@@ -1,4 +1,7 @@
 const admin = require('firebase-admin');
+const fs = require('fs');
+const path = require('path');
+const Database = require('../database/Database');
 
 /**
  * NotificationService - Real-time FCM notifications for therapists
@@ -8,9 +11,18 @@ const admin = require('firebase-admin');
 class NotificationService {
   constructor() {
     try {
-      // Initialize Firebase Admin SDK (requires google-services.json or GOOGLE_APPLICATION_CREDENTIALS)
       if (!admin.apps.length) {
-        admin.initializeApp();
+        const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        if (credentialsPath) {
+          const resolvedPath = path.resolve(process.cwd(), credentialsPath);
+          const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+          admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+            projectId: serviceAccount.project_id,
+          });
+        } else {
+          admin.initializeApp();
+        }
       }
       this.initialized = true;
     } catch (error) {
@@ -20,14 +32,65 @@ class NotificationService {
   }
 
   /**
+   * Look up registered FCM tokens for a user from the device_tokens table.
+   */
+  _getTokensForUser(userId) {
+    try {
+      const db = Database.getInstance().getDB();
+      const rows = db.prepare('SELECT token FROM device_tokens WHERE user_id = ?').all(userId);
+      return rows.map((r) => r.token);
+    } catch (error) {
+      console.warn('Unable to read device_tokens:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Send a prepared message to a set of device tokens.
+   * Returns delivery stats; invalid/expired tokens are removed.
+   */
+  async _sendToTokens(tokens, message) {
+    if (!tokens.length) return { delivered: 0, queued: 0 };
+    let delivered = 0;
+    const staleTokens = [];
+    for (const token of tokens) {
+      try {
+        await admin.messaging().send({ ...message, token });
+        delivered += 1;
+      } catch (error) {
+        if (error.code === 'messaging/registration-token-not-registered') {
+          staleTokens.push(token);
+        }
+      }
+    }
+    if (staleTokens.length) {
+      try {
+        const db = Database.getInstance().getDB();
+        db.prepare('DELETE FROM device_tokens WHERE token = ?').run(staleTokens);
+      } catch (error) {
+        console.warn('Unable to prune stale device tokens:', error.message);
+      }
+    }
+    return { delivered, queued: tokens.length - delivered };
+  }
+
+  /**
    * Register device token for therapist push notifications
    */
   async registerDeviceToken(therapistId, deviceToken, platform = 'android') {
     if (!this.initialized) return false;
     try {
-      // In production, store this in database with timestamp and platform
-      // For now, we log it
-      console.log(`Device registered: Therapist ${therapistId}, Token: ${deviceToken.substring(0, 20)}..., Platform: ${platform}`);
+      const { v4: uuidv4 } = require('uuid');
+      const db = Database.getInstance().getDB();
+      const normalized =
+        platform === 'ios' ? 'ios' : platform === 'web' ? 'web' : 'android';
+      db.prepare('DELETE FROM device_tokens WHERE user_id = ? AND token = ?')
+        .run(therapistId, deviceToken);
+      db.prepare(`
+        INSERT INTO device_tokens (id, user_id, token, platform)
+        VALUES (?, ?, ?, ?)
+      `).run(uuidv4(), therapistId, deviceToken, normalized);
+      console.log(`Device registered: Therapist ${therapistId}, Token: ${deviceToken.substring(0, 20)}..., Platform: ${normalized}`);
       return true;
     } catch (error) {
       console.error('Register device token error:', error);
@@ -106,14 +169,18 @@ class NotificationService {
         },
       };
 
-      // Send to device tokens (in production, look up from database)
-      // For now, log that notification was sent
-      console.log(`[FCM NOTIFICATION SENT] To therapist ${therapistId}: ${title}`);
-      console.log(`  Patient: ${patientName}`);
-      console.log(`  Severity: ${severity}`);
-      console.log(`  Triggered: ${triggeredValue}, Threshold: ${thresholdValue}`);
-
-      return { delivered: true, queued: false };
+      // Send to the therapist's registered device tokens.
+      const tokens = this._getTokensForUser(therapistId);
+      const result = await this._sendToTokens(tokens, message);
+      if (result.delivered > 0) {
+        console.log(`[FCM NOTIFICATION SENT] To ${result.delivered} device(s) for therapist ${therapistId}: ${title}`);
+        console.log(`  Patient: ${patientName}`);
+        console.log(`  Severity: ${severity}`);
+        console.log(`  Triggered: ${triggeredValue}, Threshold: ${thresholdValue}`);
+        return { delivered: true, queued: false };
+      }
+      console.log(`[NOTIFICATION QUEUED] No reachable device for therapist ${therapistId}: ${title}`);
+      return { queued: true, delivered: false };
     } catch (error) {
       console.error('Send clinical alert notification error:', error);
       // Queue for retry in production
@@ -161,11 +228,19 @@ class NotificationService {
         },
       };
 
-      console.log(`[ENGAGEMENT REMINDER] Sent to patient ${patientId}`);
-      console.log(`  Dropout Risk: ${dropoutRisk}%`);
-      console.log(`  Message: ${title}`);
-
-      return { delivered: true, queued: false };
+      // Send to the patient's registered device tokens.
+      const tokens = deviceToken
+        ? [deviceToken]
+        : this._getTokensForUser(patientId);
+      const result = await this._sendToTokens(tokens, message);
+      if (result.delivered > 0) {
+        console.log(`[ENGAGEMENT REMINDER] Sent to ${result.delivered} device(s) for patient ${patientId}`);
+        console.log(`  Dropout Risk: ${dropoutRisk}%`);
+        console.log(`  Message: ${title}`);
+        return { delivered: true, queued: false };
+      }
+      console.log(`[REMINDER QUEUED] Patient ${patientId} - Days since check-in: ${daysSinceCheckIn}`);
+      return { queued: true, delivered: false };
     } catch (error) {
       console.error('Send engagement reminder error:', error);
       return { delivered: false, queued: true, error: error.message };
@@ -218,8 +293,15 @@ class NotificationService {
         },
       };
 
-      console.log(`[TREATMENT MILESTONE] ${title} for therapist ${therapistId}`);
-      return { delivered: true, queued: false };
+      // Send to the therapist's registered device tokens.
+      const tokens = this._getTokensForUser(therapistId);
+      const result = await this._sendToTokens(tokens, message);
+      if (result.delivered > 0) {
+        console.log(`[TREATMENT MILESTONE] ${title} to ${result.delivered} device(s) for therapist ${therapistId}`);
+        return { delivered: true, queued: false };
+      }
+      console.log(`[MILESTONE QUEUED] ${title} for therapist ${therapistId} - no reachable device`);
+      return { queued: true, delivered: false };
     } catch (error) {
       console.error('Send treatment milestone error:', error);
       return { delivered: false, queued: true };

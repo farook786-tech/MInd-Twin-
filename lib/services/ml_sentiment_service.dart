@@ -1,5 +1,3 @@
-import 'database_service.dart';
-
 class SentimentResult {
   final String sentiment;
   final String emotion;
@@ -39,8 +37,6 @@ class CrisisDetectionResult {
 }
 
 class MlSentimentService {
-  final DatabaseService _databaseService = DatabaseService();
-
   Future<SentimentResult> analyzeSentiment(String text) async {
     final normalized = text.toLowerCase();
     final matches = _matchedTerms(normalized);
@@ -105,9 +101,14 @@ class MlSentimentService {
       'kill myself',
       'end my life',
       'hurt myself',
+      'hopeless',
     ].contains(term));
 
-    final crisisDetected = hasCriticalPhrase || confidence >= 0.65;
+    // Crisis is driven by explicit critical phrases (self-harm/suicide/
+    // hopelessness). A high-confidence fallback only fires for strongly
+    // negative messages with many distinct matched terms, so ordinary
+    // two-word emotions (e.g. "sad ... but okay") never get flagged.
+    final crisisDetected = hasCriticalPhrase || confidence >= 0.8;
     final severity = hasCriticalPhrase
         ? 'critical'
         : confidence >= 0.8
@@ -135,8 +136,29 @@ class MlSentimentService {
     final terms = <String>[];
 
     void addIfMatches(String token, List<String> patterns) {
-      if (patterns.any(text.contains)) {
-        terms.add(token);
+      for (final pattern in patterns) {
+        final index = text.indexOf(pattern);
+        if (index < 0) continue;
+        // Skip positive matches that are negated ("not", "don't", "never",
+        // "can't", "won't", "no", "isn't", "aren't" within 3 words before).
+        final before = text.substring(0, index);
+        final preceding = before
+            .trim()
+            .split(RegExp(r'\s+'))
+            .where((w) => w.isNotEmpty)
+            .toList();
+        final lastWords = preceding.length > 3
+            ? preceding.sublist(preceding.length - 3).join(' ')
+            : preceding.join(' ');
+        final negated = RegExp(
+              r"(not|never|n[o']t|don'?t|do not|can'?t|cannot|won'?t|isn'?t|aren'?t|no)\b",
+              caseSensitive: false,
+            )
+            .hasMatch(lastWords);
+        if (!negated) {
+          terms.add(token);
+        }
+        break;
       }
     }
 
@@ -148,7 +170,7 @@ class MlSentimentService {
     addIfMatches('anxious', ['anxious', 'panic', 'worried', 'nervous']);
     addIfMatches('angry', ['angry', 'furious', 'mad', 'frustrated']);
     addIfMatches('hopeless', ['hopeless', 'nothing matters', 'can not do this']);
-    addIfMatches('self-harm', ['self-harm', 'suicide', 'kill myself', 'hurt myself', 'end my life']);
+    addIfMatches('self-harm', ['self-harm', 'suicide', 'kill myself', 'hurt myself', 'end my life', 'ending my life']);
     addIfMatches('sleep', ['sleep', 'insomnia', 'nightmare', 'barely slept']);
 
     return terms.toSet().toList();

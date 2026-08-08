@@ -7,8 +7,8 @@ MindTwin is a Flutter mental health app with Firebase-backed authentication and 
 - Flutter app under `lib/`
 - Firebase auth and Firestore integration
 - Node backend under `backend/`
-- Firestore rules in `firestore.rules`
-- Deployment config in `firebase.json` and `render.yaml`
+- ML inference service under `ml_service/`
+- Deployment config in `render.yaml`
 
 ## Current Runtime Flow
 
@@ -25,7 +25,7 @@ MindTwin is a Flutter mental health app with Firebase-backed authentication and 
 - Shared auth logic: `lib/services/auth_service.dart`
 - Backend entry point: `backend/index.js`
 - Backend package config: `backend/package.json`
-- Firestore rules: `firestore.rules`
+- Firestore rules are managed in the Firebase console (project `mindtwin-60879`)
 
 ## Run Locally
 
@@ -63,6 +63,8 @@ flutter run -d chrome
 The project is configured for Firebase project `mindtwin-60879`.
 
 ### Deploy Firestore rules
+
+Manage rules in the Firebase console or create a `firestore.rules` file first, then deploy:
 
 ```powershell
 firebase deploy --only firestore:rules --project mindtwin-60879

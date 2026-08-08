@@ -1,16 +1,17 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.example.mindtwin.wear"
-    compileSdk = 33
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.mindtwin.wear"
         minSdk = 30 // Target Wear OS 3 (Galaxy Watch 4)
-        targetSdk = 33
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }
@@ -34,10 +35,6 @@ android {
     buildFeatures {
         compose = true
     }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
-    }
 }
 
 dependencies {
@@ -47,6 +44,7 @@ dependencies {
 
     // Kotlin Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.6.4")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.6.4")
 
     // Compose Wear OS
     implementation("androidx.wear.compose:compose-material:1.2.0")

@@ -506,13 +506,17 @@ class _SimulatorTabState extends State<SimulatorTab> {
                                       'type': intervention,
                                       'beforeRisk': risk,
                                       'afterRisk': projected,
+                                      'isSimulated': true,
+                                      'source': 'simulator',
                                       'timestamp': FieldValue.serverTimestamp(),
                                     });
 
                                     if (!context.mounted) return;
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text('Intervention applied successfully.'),
+                                        content: Text(
+                                          'Simulated intervention recorded (not applied to patient).',
+                                        ),
                                         backgroundColor: AppTheme.primaryIndigo,
                                       ),
                                     );

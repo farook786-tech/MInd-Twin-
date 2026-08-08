@@ -42,13 +42,33 @@ class DailyLogSource {
                 ? (DateTime.tryParse(ts) ?? DateTime.now())
                 : DateTime.now();
 
+    // Firestore stores the check-in choices on an inverted scale where a
+    // lower score is better (mood: 1=great..5=frustrated, energy & sleep:
+    // 1=best..4=worst). The ML services expect DailyLog on a higher-is-better
+    // scale (mood/energy 0-10, sleep in hours 0-12), so normalize here.
+    final double moodScore = _invertToBestScale(
+      (data['moodScore'] ?? 3).toDouble(),
+      min: 1,
+      max: 5,
+    ) * 10; // -> 0-10, 10 = best
+
+    final double sleepHours = _sleepScoreToHours(
+      (data['sleepScore'] ?? 2).toDouble(),
+    ); // -> 0-12 hours, higher = better
+
+    final double energyLevel = _invertToBestScale(
+      (data['energyScore'] ?? 2).toDouble(),
+      min: 1,
+      max: 4,
+    ) * 10; // -> 0-10, 10 = best
+
     return DailyLog(
       id: id,
       patientId: data['patientId'] ?? '',
       timestamp: timestamp,
-      moodScore: (data['moodScore'] ?? 5).toDouble(),
-      sleepHours: (data['sleepScore'] ?? 7).toDouble(),
-      energyLevel: (data['energyScore'] ?? 5).toDouble(),
+      moodScore: moodScore,
+      sleepHours: sleepHours,
+      energyLevel: energyLevel,
       anxietyLevel: (data['anxietyLevel'] ?? 5.0).toDouble(),
       selfReportScore:
           (data['selfReportScore'] ?? data['wellbeingScore'] ?? 50).toDouble(),
@@ -56,6 +76,19 @@ class DailyLogSource {
       date: _dateString(timestamp),
       notes: (data['optionalNote'] ?? data['summaryText'])?.toString(),
     );
+  }
+
+  /// Map a 1..[max] score where [min] is best onto a 0..1 scale where 1 is best.
+  double _invertToBestScale(double score, {required double min, required double max}) {
+    final clamped = score.clamp(min, max);
+    return ((max - clamped) / (max - min)).toDouble();
+  }
+
+  /// Map the 1..4 sleep choice (1=best, 4=worst) onto estimated hours slept,
+  /// matching the option labels (great 7-9h, okay 5-7h, poor 3-5h, barely <3h).
+  double _sleepScoreToHours(double score) {
+    final clamped = score.clamp(1, 4);
+    return (8.0 - (clamped - 1) * 2.0);
   }
 
   String _dateString(DateTime timestamp) {

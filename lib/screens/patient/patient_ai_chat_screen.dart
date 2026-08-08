@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/backend_api_service.dart';
-import '../../services/chat_service.dart';
 import '../../services/gemini_service.dart';
 import '../../services/ml_sentiment_service.dart';
 import '../../services/patient_memory_service.dart';
@@ -81,9 +80,8 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
         maxWords: 100,
       );
 
-      _runCrisisDetection(messageText);
-
       setState(() {
+        _isLoading = false;
         _messages.add(ChatMessage(
           id: DateTime.now().toString(),
           role: 'assistant',
@@ -91,6 +89,10 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
           timestamp: DateTime.now(),
         ));
       });
+
+      // Run after the reply is committed so an escalation dialog never pops
+      // mid-reply; _runCrisisDetection swallows its own errors.
+      await _runCrisisDetection(messageText);
     } catch (e) {
       setState(() {
         _errorMessage = 'Ally is unavailable right now. Please try again in a moment.';
@@ -107,8 +109,9 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
         .where((m) => m.role == 'user')
         .map((m) => m.message)
         .toList();
-    final recentHistory = userHistory.length > 2
-        ? userHistory.sublist(userHistory.length - 2)
+    // Match the amount of context fed to the Gemini prompt (6 turns).
+    final recentHistory = userHistory.length > 6
+        ? userHistory.sublist(userHistory.length - 6)
         : userHistory;
 
     // 1. Primary path: ML bridge (server-side model + phrase + idiom decision).
@@ -174,7 +177,9 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
     try {
       final userDoc = await _firestore.collection('users').doc(widget.patientId).get();
       therapistId = (userDoc.data()?['therapistId'] ?? '').toString();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to load therapist id for crisis event: $e');
+    }
 
     await _firestore.collection('crisis_events').add({
       'patientId': widget.patientId,

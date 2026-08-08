@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "test": "jest",
     "migrate": "node scripts/migrate.js",
     "start:pm2": "npx pm2 start index.js --name mindtwin-backend --time",
     "stop:pm2": "npx pm2 stop mindtwin-backend",
@@ -22,14 +23,9 @@
     "express": "^4.18.2",
     "firebase-admin": "^13.7.0",
     "jsonwebtoken": "^9.0.0",
-    "moment": "^2.29.4",
-    "node-schedule": "^2.1.1",
     "pdfkit": "^0.17.2",
-    "sqlite3": "^5.1.7",
+    "better-sqlite3": "^11.8.1",
     "uuid": "^9.0.0"
-  },
-  "optionalDependencies": {
-    "better-sqlite3": "^11.8.1"
   },
   "devDependencies": {
     "jest": "^30.4.2",

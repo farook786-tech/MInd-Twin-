@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Stores the JWT issued by the MindTwin backend.
@@ -86,7 +87,9 @@ class TokenService {
       if (exp is int) {
         return DateTime.fromMillisecondsSinceEpoch(exp * 1000);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to decode token expiry: $e');
+    }
     return null;
   }
 }

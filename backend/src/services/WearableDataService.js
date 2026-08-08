@@ -9,7 +9,7 @@ const ClinicalService = require('./ClinicalService');
  */
 class WearableDataService {
   constructor() {
-    this.db = new Database();
+    this.db = Database.getInstance();
     this.clinicalService = new ClinicalService();
   }
 

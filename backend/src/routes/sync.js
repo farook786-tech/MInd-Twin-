@@ -16,6 +16,7 @@ router.post('/public/checkin', authMiddleware, (req, res) => {
   try {
     const database = db.getDB();
     const {
+      id: clientId,
       clinicCode,
       patientExternalId,
       patientName,
@@ -45,7 +46,9 @@ router.post('/public/checkin', authMiddleware, (req, res) => {
       return res.status(403).json({ error: 'Access denied to this patient check-in' });
     }
 
-    const id = uuidv4();
+    // Upsert on the optional client-generated id so retries and re-syncs
+    // update the original check-in instead of duplicating it.
+    const id = clientId || uuidv4();
     const stmt = database.prepare(`
       INSERT INTO shared_checkins (
         id, clinic_code, patient_external_id, patient_name, patient_email,
@@ -54,6 +57,26 @@ router.post('/public/checkin', authMiddleware, (req, res) => {
         risk_score, risk_state, wellbeing_score, notes,
         intervention_title, companion_message, explainability_json, source_platform
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        clinic_code = excluded.clinic_code,
+        patient_external_id = excluded.patient_external_id,
+        patient_name = excluded.patient_name,
+        patient_email = excluded.patient_email,
+        mood_score = excluded.mood_score,
+        sleep_hours = excluded.sleep_hours,
+        anxiety_level = excluded.anxiety_level,
+        energy_level = excluded.energy_level,
+        heart_rate = excluded.heart_rate,
+        activity_level = excluded.activity_level,
+        screen_time_hours = excluded.screen_time_hours,
+        risk_score = excluded.risk_score,
+        risk_state = excluded.risk_state,
+        wellbeing_score = excluded.wellbeing_score,
+        notes = excluded.notes,
+        intervention_title = excluded.intervention_title,
+        companion_message = excluded.companion_message,
+        explainability_json = excluded.explainability_json,
+        source_platform = excluded.source_platform
     `);
 
     stmt.run(
@@ -157,6 +180,7 @@ router.post('/public/appointments/book', authMiddleware, (req, res) => {
     const database = db.getDB();
     const {
       clinicCode,
+      id: clientId,
       patientExternalId,
       patientName,
       therapistExternalId,
@@ -176,13 +200,27 @@ router.post('/public/appointments/book', authMiddleware, (req, res) => {
       return res.status(403).json({ error: 'Access denied to this patient appointment' });
     }
 
-    const id = uuidv4();
+    const id = clientId || uuidv4();
+    // Upsert on the (client-generated) id so re-syncing the same appointment
+    // updates it instead of creating duplicates. Booking workflow fields
+    // (status, patient_seen, patient_accepted) are preserved on re-send.
     const stmt = database.prepare(`
       INSERT INTO shared_appointments (
         id, clinic_code, patient_external_id, patient_name,
         therapist_external_id, therapist_name,
         scheduled_at, duration_minutes, type, status, notes, is_virtual
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        clinic_code = excluded.clinic_code,
+        patient_external_id = excluded.patient_external_id,
+        patient_name = excluded.patient_name,
+        therapist_external_id = excluded.therapist_external_id,
+        therapist_name = excluded.therapist_name,
+        scheduled_at = excluded.scheduled_at,
+        duration_minutes = excluded.duration_minutes,
+        type = excluded.type,
+        notes = excluded.notes,
+        is_virtual = excluded.is_virtual
     `);
 
     stmt.run(
@@ -248,6 +286,7 @@ router.post('/public/treatment-plans/send', authMiddleware, requireRole(['therap
   try {
     const database = db.getDB();
     const {
+      id: clientId,
       clinicCode,
       patientExternalId,
       patientName,
@@ -268,7 +307,9 @@ router.post('/public/treatment-plans/send', authMiddleware, requireRole(['therap
       });
     }
 
-    const id = uuidv4();
+    const id = clientId || uuidv4();
+    // Upsert on the (client-generated) id so re-sending the same plan updates
+    // it instead of creating duplicates.
     const stmt = database.prepare(`
       INSERT INTO shared_treatment_plans (
         id, clinic_code, patient_external_id, patient_name,
@@ -276,6 +317,19 @@ router.post('/public/treatment-plans/send', authMiddleware, requireRole(['therap
         primary_diagnosis, treatment_approach, session_frequency,
         estimated_duration_weeks, goals_json, status, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        clinic_code = excluded.clinic_code,
+        patient_external_id = excluded.patient_external_id,
+        patient_name = excluded.patient_name,
+        therapist_external_id = excluded.therapist_external_id,
+        therapist_name = excluded.therapist_name,
+        primary_diagnosis = excluded.primary_diagnosis,
+        treatment_approach = excluded.treatment_approach,
+        session_frequency = excluded.session_frequency,
+        estimated_duration_weeks = excluded.estimated_duration_weeks,
+        goals_json = excluded.goals_json,
+        status = excluded.status,
+        notes = excluded.notes
     `);
 
     stmt.run(
@@ -440,6 +494,7 @@ router.get('/public/chat/messages', authMiddleware, (req, res) => {
         body: row.body,
         timestamp: row.timestamp || row.created_at,
         status: 'sent',
+        isRead: row.is_read ? 1 : 0,
       })),
     });
   } catch (error) {

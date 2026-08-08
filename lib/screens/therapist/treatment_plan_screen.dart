@@ -502,11 +502,88 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
     );
   }
 
-  void _updateProgress() {
-    // TODO: Open dialog to update goals progress
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Goal progress update coming soon')),
+  Future<void> _updateProgress() async {
+    final plan = _activePlan;
+    if (plan == null || plan.goals.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No goals to update yet')),
+      );
+      return;
+    }
+
+    final goalState = plan.goals
+        .map((g) => _GoalProgressState(
+              id: g.id,
+              description: g.description,
+              status: g.status,
+              progressPercentage: g.progressPercentage ?? 0,
+              progressNotes: g.progressNotes ?? '',
+            ))
+        .toList();
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _GoalProgressDialog(goalState: goalState),
     );
+
+    if (saved != true || !mounted) return;
+
+    final updated = TreatmentPlan(
+      id: plan.id,
+      patientId: plan.patientId,
+      patientName: plan.patientName,
+      therapistId: plan.therapistId,
+      therapistName: plan.therapistName,
+      primaryDiagnosis: plan.primaryDiagnosis,
+      secondaryDiagnoses: plan.secondaryDiagnoses,
+      diagnosticCodes: plan.diagnosticCodes,
+      treatmentApproach: plan.treatmentApproach,
+      sessionFrequency: plan.sessionFrequency,
+      estimatedDurationWeeks: plan.estimatedDurationWeeks,
+      goals: goalState
+          .map((g) => TreatmentGoal(
+                id: g.id,
+                description: g.description,
+                targetDate: plan.goals
+                    .firstWhere((og) => og.id == g.id)
+                    .targetDate,
+                status: g.status,
+                progressNotes: g.progressNotes.trim().isEmpty
+                    ? null
+                    : g.progressNotes.trim(),
+                progressPercentage: g.progressPercentage,
+              ))
+          .toList(),
+      includesIndividualTherapy: plan.includesIndividualTherapy,
+      includesGroupTherapy: plan.includesGroupTherapy,
+      includesMedication: plan.includesMedication,
+      medicationNotes: plan.medicationNotes,
+      status: plan.status,
+      createdAt: plan.createdAt,
+      lastReviewedAt: DateTime.now(),
+      completedAt: plan.completedAt,
+      discontinuationReason: plan.discontinuationReason,
+      progressSummary: plan.progressSummary,
+      overallProgressPercentage: goalState.isEmpty
+          ? plan.overallProgressPercentage
+          : (goalState.map((g) => g.progressPercentage).reduce((a, b) => a + b) /
+                  goalState.length)
+              .round(),
+    );
+
+    try {
+      await _dbService.updateTreatmentPlan(updated);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Goal progress updated')),
+      );
+      await _loadPlans();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update progress: $e')),
+      );
+    }
   }
 
   void _completePlan() async {
@@ -961,6 +1038,146 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
         content: Text('✅ Treatment plan created successfully'),
         backgroundColor: AppTheme.safeGreen,
       ),
+    );
+  }
+}
+
+class _GoalProgressState {
+  final String id;
+  final String description;
+  String status;
+  int progressPercentage;
+  String progressNotes;
+
+  _GoalProgressState({
+    required this.id,
+    required this.description,
+    required this.status,
+    required this.progressPercentage,
+    required this.progressNotes,
+  });
+}
+
+class _GoalProgressDialog extends StatefulWidget {
+  final List<_GoalProgressState> goalState;
+
+  const _GoalProgressDialog({required this.goalState});
+
+  @override
+  State<_GoalProgressDialog> createState() => _GoalProgressDialogState();
+}
+
+class _GoalProgressDialogState extends State<_GoalProgressDialog> {
+  late List<_GoalProgressState> _goalState;
+
+  @override
+  void initState() {
+    super.initState();
+    _goalState = widget.goalState;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppTheme.cardDark,
+      title: const Text(
+        'Update Goal Progress',
+        style: TextStyle(color: Colors.white),
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: _goalState.length,
+          itemBuilder: (context, index) {
+            final goal = _goalState[index];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  goal.description,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${goal.progressPercentage}%',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Slider(
+                        value: goal.progressPercentage.toDouble(),
+                        min: 0,
+                        max: 100,
+                        divisions: 10,
+                        label: '${goal.progressPercentage}%',
+                        activeColor: AppTheme.primaryIndigo,
+                        onChanged: (value) =>
+                            setState(() => goal.progressPercentage = value.round()),
+                      ),
+                    ),
+                  ],
+                ),
+                DropdownButtonFormField<String>(
+                  initialValue: goal.status,
+                  dropdownColor: AppTheme.cardDark,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    labelStyle: TextStyle(color: Colors.white54),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24),
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'not-started', child: Text('Not started')),
+                    DropdownMenuItem(value: 'in-progress', child: Text('In progress')),
+                    DropdownMenuItem(value: 'achieved', child: Text('Achieved')),
+                    DropdownMenuItem(value: 'discontinued', child: Text('Discontinued')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => goal.status = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: TextEditingController(text: goal.progressNotes),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: 'Progress notes (optional)',
+                    hintStyle: TextStyle(color: Colors.white38),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24),
+                    ),
+                  ),
+                  onChanged: (value) => goal.progressNotes = value,
+                ),
+                const Divider(color: Colors.white12, height: 24),
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryIndigo),
+          child: const Text('Save Progress'),
+        ),
+      ],
     );
   }
 }

@@ -18,5 +18,4 @@ class AppConfig {
     if (isTherapistOnlyMode) return 'therapist';
     return 'unified';
   }
-
 }

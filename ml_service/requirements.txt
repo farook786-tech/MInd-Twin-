@@ -1,5 +1,5 @@
 fastapi==0.115.6
 uvicorn==0.32.1
 scikit-learn==1.6.1
-numpy
-pydantic
+numpy==2.5.1
+pydantic==2.13.4

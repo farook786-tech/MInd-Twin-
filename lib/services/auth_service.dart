@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:math';
 import '../models/patient.dart';
 import 'database_service.dart';
 import 'backend_api_service.dart';
@@ -42,7 +43,9 @@ class AuthService {
         if (_localUserId != null) {
           _userCache[_localUserId!] = _cachedUserData!;
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to restore local auth session: $e');
+      }
     }
 
     try {
@@ -70,7 +73,9 @@ class AuthService {
         if (cached != null) {
           try {
             _cachedUserData = jsonDecode(cached) as Map<String, dynamic>;
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('Failed to decode local auth session: $e');
+          }
         }
       }
     }
@@ -148,10 +153,10 @@ class AuthService {
       final uid = credential.user!.uid;
       final now = DateTime.now().toIso8601String();
 
+      // Per-user random salt so identical answers produce different hashes.
+      final salt = _generateSalt();
       final hashedAnswers = securityAnswers
-              ?.map((a) => sha256
-                  .convert(utf8.encode(a.toLowerCase().trim()))
-                  .toString())
+              ?.map((a) => _hashSecurityAnswer(a, salt))
               .toList() ??
           [];
 
@@ -164,6 +169,7 @@ class AuthService {
         'lastLogin': FieldValue.serverTimestamp(),
         'securityQuestions': securityQuestions ?? [],
         'securityAnswers': hashedAnswers,
+        'securityAnswersSalt': salt,
         if (therapistId != null) 'therapistId': therapistId,
         if (assignedTherapist != null) 'assignedTherapist': assignedTherapist,
       };
@@ -305,7 +311,9 @@ class AuthService {
     await _tokenService.clearToken();
     try {
       await _auth.signOut();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Sign-out error (continuing local logout): $e');
+    }
   }
 
   /// Get current user data
@@ -441,13 +449,14 @@ class AuthService {
 
       final data = query.docs.first.data();
       final storedAnswers = List<String>.from(data['securityAnswers'] ?? []);
+      final storedSalt = (data['securityAnswersSalt'] as String?) ?? '';
 
       if (storedAnswers.isEmpty) {
         return {'success': false, 'message': 'No security answers configured'};
       }
 
       final hashedAnswers = answers
-          .map((a) => sha256.convert(utf8.encode(a.toLowerCase().trim())).toString())
+          .map((a) => _hashSecurityAnswer(a, storedSalt))
           .toList();
 
       bool allMatch = true;
@@ -477,5 +486,17 @@ class AuthService {
     } catch (e) {
       return {'success': false, 'message': 'Error resetting password: $e'};
     }
+  }
+
+  /// Generate a 32-char random hex salt for security answers.
+  String _generateSalt() {
+    final random = Random.secure();
+    return List.generate(32, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  /// Hash a security answer with the user's salt (HMAC-style, per-user salt).
+  String _hashSecurityAnswer(String answer, String salt) {
+    return sha256.convert(utf8.encode('$salt:${answer.toLowerCase().trim()}')).toString();
   }
 }

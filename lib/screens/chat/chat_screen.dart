@@ -6,7 +6,7 @@ import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/notification_service.dart';
-import '../../services/chat_service.dart';
+import '../../services/gemini_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String otherUserId;
@@ -43,7 +43,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _resolvedOtherUserName = widget.otherUserName;
     _resolveOtherUserName();
     _loadConversation();
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _loadConversation();
     });
   }
@@ -65,7 +65,9 @@ class _ChatScreenState extends State<ChatScreen> {
           _resolvedOtherUserName = patient.name;
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to resolve other user name: $e');
+    }
   }
 
   @override
@@ -418,35 +420,23 @@ class _ChatScreenState extends State<ChatScreen> {
           widget.otherUserName.toLowerCase().contains('ai');
       if (!widget.isTherapist && isAiConversation) {
         try {
-          // Initialize ChatService if not already done
-          final chatService = ChatService();
-          // Resolve backend URL
-          final baseUrl = await _backendApiService.autoDetectLanBackendUrl() ??
-              'http://localhost:5000';
-
-          await chatService.initialize(
-            baseUrl: baseUrl,
-            userId: senderId,
-            userRole: 'patient',
+          // Single consolidated AI client (GeminiService backs /api/gemini/chat).
+          final aiResponse = await GeminiService().generateResponseAdvanced(
+            systemPrompt: 'You are a supportive mental health AI assistant.',
+            userPrompt: message,
           );
 
-          final result = await chatService.sendMessage(message);
+          final aiMessageId = const Uuid().v4();
+          final aiTimestamp = DateTime.now().toIso8601String();
 
-          if (result['success'] == true) {
-            final aiResponse =
-                result['aiResponse'] ?? 'I understood your message.';
-            final aiMessageId = const Uuid().v4();
-            final aiTimestamp = DateTime.now().toIso8601String();
-
-            await _dbService.insertMessage(
-              id: aiMessageId,
-              senderId: widget.otherUserId,
-              receiverId: senderId,
-              body: aiResponse,
-              timestamp: aiTimestamp,
-              status: 'sent',
-            );
-          }
+          await _dbService.insertMessage(
+            id: aiMessageId,
+            senderId: widget.otherUserId,
+            receiverId: senderId,
+            body: aiResponse,
+            timestamp: aiTimestamp,
+            status: 'sent',
+          );
         } catch (e) {
           print('AI response error (using local messaging only): $e');
           // Fallback: just wait for therapist response via direct messaging
@@ -486,6 +476,7 @@ class _ChatScreenState extends State<ChatScreen> {
         timestamp:
             (msg['timestamp'] ?? DateTime.now().toIso8601String()).toString(),
         status: (msg['status'] ?? 'sent').toString(),
+        isRead: (msg['isRead'] ?? msg['is_read'] ?? 0) as int? ?? 0,
       );
     }
 
@@ -495,11 +486,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     await _dbService.markConversationAsRead(userId, widget.otherUserId);
 
-    // Auto-mark MY messages (sent by current user) as read when recipient views conversation
+    // Auto-mark messages the other user sent to me as read on the backend,
+    // so the sender sees a read receipt on their device.
     for (final msg in merged) {
-      if ((msg['senderId'] ?? '') == userId) {
+      final senderId = (msg['senderId'] ?? '').toString();
+      final receiverId = (msg['receiverId'] ?? '').toString();
+      if (senderId == widget.otherUserId && receiverId == userId) {
         final messageId = msg['id']?.toString() ?? '';
-        final isRead = (msg['is_read'] as num?)?.toInt() ?? 0;
+        final isRead = (msg['is_read'] ?? 0) as int? ?? 0;
         if (messageId.isNotEmpty && isRead == 0) {
           await _backendApiService.markMessageRead(messageId);
         }

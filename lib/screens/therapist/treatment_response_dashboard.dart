@@ -258,7 +258,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
     final currentScore = current?['score'] as int?;
     final responsePercentage = response?['responsePercentage'] as int? ?? 0;
     final remissionStatus = response?['remissionStatus'] as String? ?? 'no_data';
-    final weeksSince = response?['weeksSinceBa seline'] as int? ?? 0;
+    final weeksSince = response?['weeksSinceBaseline'] as int? ?? 0;
 
     Color statusColor;
     if (remissionStatus == 'remission') {

@@ -36,7 +36,9 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
     try {
       _therapistId = _authService.currentUserId ?? 'therapist_main';
       setState(() {});
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to resolve therapist id: $e');
+    }
   }
 
   Future<void> _generateTreatmentReport() async {

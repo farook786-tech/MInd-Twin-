@@ -66,7 +66,8 @@ class MLAnalysisService {
       }
 
       // Sort logs by date (newest first)
-      final sortedLogs = logs.toList();
+      final sortedLogs = logs.toList()
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
       // Calculate metrics
       final currentRiskScore = _calculateRiskScore(sortedLogs);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -518,6 +519,14 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
   }
 
   Future<void> _downloadTotalDataPdf() async {
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF export is not available on web')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {

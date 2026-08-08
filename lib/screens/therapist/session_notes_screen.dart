@@ -175,11 +175,14 @@ class _SessionNotesScreenState extends State<SessionNotesScreen> {
   }
 
   void _showCreateNoteDialog() {
+    final currentUser = _authService.getCurrentUser();
+    final therapistName = (currentUser?['name']?.toString() ?? '').trim();
     showDialog(
       context: context,
       builder: (context) => _SessionNoteFormDialog(
         patient: widget.patient,
         therapistId: _authService.currentUserId ?? '',
+        therapistName: therapistName.isEmpty ? 'Therapist' : therapistName,
         onSave: (note) async {
           await _dbService.insertSessionNote(note);
           _loadNotes();
@@ -214,11 +217,13 @@ class _SessionNotesScreenState extends State<SessionNotesScreen> {
 class _SessionNoteFormDialog extends StatefulWidget {
   final Patient patient;
   final String therapistId;
+  final String therapistName;
   final Function(SessionNote) onSave;
 
   const _SessionNoteFormDialog({
     required this.patient,
     required this.therapistId,
+    required this.therapistName,
     required this.onSave,
   });
 
@@ -536,7 +541,7 @@ class _SessionNoteFormDialogState extends State<_SessionNoteFormDialog> {
       patientId: widget.patient.id,
       patientName: widget.patient.name,
       therapistId: widget.therapistId,
-      therapistName: 'Therapist', // TODO: Get from auth
+      therapistName: widget.therapistName,
       sessionDate: _sessionDate,
       durationMinutes: _durationMinutes,
       chiefComplaint: _chiefComplaintController.text.trim(),

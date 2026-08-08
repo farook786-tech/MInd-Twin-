@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:uuid/uuid.dart';
@@ -41,6 +42,13 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
   }
 
   Future<void> _startRecording() async {
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Voice journaling is not available on web')),
+      );
+      return;
+    }
     try {
       if (await _recorder.hasPermission()) {
         final dir = await getApplicationDocumentsDirectory();
@@ -322,6 +330,13 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
   }
 
   Future<void> _playJournal(String filePath, String journalId) async {
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Playback is not available on web')),
+      );
+      return;
+    }
     try {
       if (_playingId == journalId && _isPlaying) {
         // Stop playing

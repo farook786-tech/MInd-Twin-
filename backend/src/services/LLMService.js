@@ -23,6 +23,28 @@ class LLMService {
     return DatabaseService.getInstance().getDB();
   }
 
+  /**
+   * True when an OpenRouter API key is configured (not empty/placeholder).
+   */
+  _hasConfiguredApiKey() {
+    return Boolean(
+      this.apiKey &&
+      this.apiKey !== 'undefined' &&
+      !this.apiKey.includes('YOUR_OPENROUTER') &&
+      !this.apiKey.includes('YOUR_KEY')
+    );
+  }
+
+  /**
+   * Throws a clear, actionable error instead of sending `Bearer undefined`
+   * to OpenRouter when the API key is missing.
+   */
+  _assertApiKeyConfigured() {
+    if (!this._hasConfiguredApiKey()) {
+      throw new Error('OPENROUTER_API_KEY is not configured. Add it to backend/.env to enable AI chat.');
+    }
+  }
+
   _getSystemPrompt(userRole = 'patient') {
     if (userRole === 'therapist') {
       return `You are a clinical support AI assistant for therapists using the MindTwin app.
@@ -144,6 +166,7 @@ Remember: You're Ally, their supportive friend on this journey. Be real, be cari
       ];
 
       // Call OpenRouter API
+      this._assertApiKeyConfigured();
       const response = await axios.post(`${this.baseURL}/chat/completions`, {
         model: this.model,
         messages,
@@ -619,6 +642,7 @@ Patient risk level: ${riskLevel}
 Provide brief, compassionate crisis support (max 100 words).
 Include: validation, grounding technique, safety resources.`;
 
+      this._assertApiKeyConfigured();
       const response = await axios.post(`${this.baseURL}/chat/completions`, {
         model: this.model,
         messages: [
@@ -657,6 +681,7 @@ Include: validation, grounding technique, safety resources.`;
     try {
       const analysis = `Summary of assessment - PHQ-9: ${assessmentData.phq9_score}, Risk: ${assessmentData.risk_level}. Provide brief clinical insights (max 100 words).`;
 
+      this._assertApiKeyConfigured();
       const response = await axios.post(`${this.baseURL}/chat/completions`, {
         model: this.model,
         messages: [
