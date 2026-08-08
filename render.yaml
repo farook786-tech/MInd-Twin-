@@ -27,6 +27,10 @@ services:
       # e.g. https://mindtwin-ml.onrender.com (set when creating the service).
       - key: ML_SERVICE_URL
         sync: false
+      # Paste the Firebase service-account JSON (raw or base64) generated in the
+      # Firebase console. Local dev instead uses GOOGLE_APPLICATION_CREDENTIALS.
+      - key: GOOGLE_APPLICATION_CREDENTIALS_JSON
+        sync: false
     disks:
       - name: mindtwin-data
         mountPath: /var/data

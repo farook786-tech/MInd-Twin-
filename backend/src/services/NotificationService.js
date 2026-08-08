@@ -12,10 +12,21 @@ class NotificationService {
   constructor() {
     try {
       if (!admin.apps.length) {
+        // Production (Render): pass the service account as an env var, either as
+        // raw JSON or base64-encoded (base64 avoids newline/escaping issues).
+        // Local dev: GOOGLE_APPLICATION_CREDENTIALS points to the JSON file.
+        const inlineJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
         const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-        if (credentialsPath) {
+        let serviceAccount = null;
+        if (inlineJson) {
+          const raw = inlineJson.trim();
+          serviceAccount = JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8'));
+        } else if (credentialsPath) {
           const resolvedPath = path.resolve(process.cwd(), credentialsPath);
-          const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+          serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+        }
+
+        if (serviceAccount) {
           admin.initializeApp({
             credential: admin.credential.cert(serviceAccount),
             projectId: serviceAccount.project_id,
