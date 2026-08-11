@@ -477,6 +477,20 @@ class DatabaseService {
     return this.db;
   }
 
+  /**
+   * Proxy for the underlying better-sqlite3 connection's prepare().
+   * Several services hold the DatabaseService instance directly
+   * (`this.db = Database.getInstance()`) and call this.db.prepare(...);
+   * without this proxy those calls fail with "this.db.prepare is not a
+   * function".
+   */
+  prepare(sql) {
+    if (!this.db || typeof this.db.prepare !== 'function') {
+      throw new Error('Database connection is not initialized');
+    }
+    return this.db.prepare(sql);
+  }
+
   close() {
     if (this.db) {
       this.db.close();

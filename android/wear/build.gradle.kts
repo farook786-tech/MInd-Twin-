@@ -52,6 +52,7 @@ dependencies {
     
     // Jetpack Compose Integration
     implementation("androidx.activity:activity-compose:1.7.2")
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.compose.ui:ui:1.5.1")
     implementation("androidx.compose.ui:ui-tooling-preview:1.5.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1")

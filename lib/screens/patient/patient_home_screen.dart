@@ -7,6 +7,7 @@ import '../../core/widgets/app_card.dart';
 import '../../core/widgets/twin_chart.dart';
 import '../../services/auth_service.dart';
 import '../chat/chat_screen.dart';
+import '../shared/profile_screen.dart';
 import 'daily_checkin_screen.dart';
 import 'ethics_control_screen.dart';
 import 'my_twin_screen.dart';
@@ -853,6 +854,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             icon: const Icon(Icons.chat_bubble_outline),
             tooltip: 'Messages',
             onPressed: _openMessages,
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ProfileScreen(),
+              ),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.logout),

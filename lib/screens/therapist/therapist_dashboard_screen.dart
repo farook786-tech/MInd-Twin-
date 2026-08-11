@@ -13,6 +13,7 @@ import 'appointments_screen.dart';
 import 'real_time_alerts_center_screen.dart';
 import 'treatment_report_screen.dart';
 import 'engagement_reminder_stats_screen.dart';
+import '../shared/profile_screen.dart';
 
 class TherapistDashboardScreen extends StatefulWidget {
   const TherapistDashboardScreen({super.key});
@@ -74,6 +75,12 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
           MaterialPageRoute(
             builder: (context) => const EngagementReminderStatsScreen(),
           ),
+        );
+        break;
+      case 'profile':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const ProfileScreen()),
         );
         break;
       case 'logout':
@@ -156,6 +163,16 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
                 ),
               ),
               PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'profile',
+                child: Row(
+                  children: [
+                    Icon(Icons.person_outline_rounded, color: Colors.white70, size: 18),
+                    SizedBox(width: 10),
+                    Text('Profile', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
               PopupMenuItem<String>(
                 value: 'logout',
                 child: Row(

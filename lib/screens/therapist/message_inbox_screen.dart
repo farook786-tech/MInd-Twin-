@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
 import '../../core/theme/app_theme.dart';
+import '../../services/chat_service.dart';
 import '../../services/database_service.dart';
 import '../../services/auth_service.dart';
 import '../chat/chat_screen.dart';
@@ -15,8 +17,8 @@ class MessageInboxScreen extends StatefulWidget {
 class _MessageInboxScreenState extends State<MessageInboxScreen> {
   late final DatabaseService _dbService;
   late final AuthService _authService;
-  late Timer _updateTimer;
-  
+  StreamSubscription<List<Map<String, dynamic>>>? _cloudSub;
+
   List<Map<String, dynamic>> _patientThreads = [];
   Map<String, int> _unreadCounts = {};
   bool _isLoading = true;
@@ -35,13 +37,30 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
       final therapistId = _authService.currentUserId;
       if (therapistId == null) return;
 
-      // Get all patients
+      if (kIsWeb) {
+        // On web, threads come from Firestore chats directly.
+        final cloudThreads = await ChatService().fetchInbox(therapistId);
+        final unreadMap = <String, int>{
+          for (final t in cloudThreads)
+            (t['patientId'] as String): (t['unreadCount'] as int? ?? 0),
+        };
+        if (mounted) {
+          setState(() {
+            _patientThreads = cloudThreads;
+            _unreadCounts = unreadMap;
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      // Get all patients (local SQLite on mobile)
       final patients = await _dbService.getAllPatients();
       final threads = <Map<String, dynamic>>[];
       final unreadMap = <String, int>{};
 
       for (final patient in patients) {
-        // Get last message
+        // Get last message from local SQLite (mobile)
         final messages = await _dbService.getConversation(therapistId, patient.id);
         if (messages.isNotEmpty) {
           final lastMessage = messages.last;
@@ -63,7 +82,11 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                 orElse: () => <String, dynamic>{},
               );
           
-          final lastTherapistRead = (lastTherapistMessage['is_read'] as num?)?.toInt() ?? 0;
+          final lastTherapistRead = ((lastTherapistMessage['is_read'] ??
+                  lastTherapistMessage['isRead'] ??
+                  0) as num?)
+              ?.toInt() ??
+              0;
           
           threads.add({
             'patientId': patient.id,
@@ -99,10 +122,20 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
     }
   }
 
+  /// Subscribe to the Firestore conversation feed instead of polling. New
+  /// messages update the parent `chats/{conversationId}` document, which
+  /// re-emits the inbox and triggers a reload (reusing the SQLite/cloud
+  /// load logic on each platform).
   void _startRealtimeUpdates() {
-    _updateTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      _loadThreads();
-    });
+    final therapistId = _authService.currentUserId;
+    if (therapistId == null) return;
+    _cloudSub = ChatService()
+        .inboxStream(therapistId)
+        .listen((threads) {
+          _loadThreads();
+        }, onError: (e) {
+          print('Inbox stream error: $e');
+        });
   }
 
   @override
@@ -351,7 +384,7 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
 
   @override
   void dispose() {
-    _updateTimer.cancel();
+    _cloudSub?.cancel();
     super.dispose();
   }
 }

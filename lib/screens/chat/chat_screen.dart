@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
 import '../../services/backend_api_service.dart';
+import '../../services/chat_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/gemini_service.dart';
 
@@ -31,6 +34,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final BackendApiService _backendApiService = BackendApiService();
   final List<Map<String, dynamic>> _messages = [];
   Timer? _pollTimer;
+  StreamSubscription<List<Map<String, dynamic>>>? _cloudSub;
   String? _currentUserId;
   String _resolvedOtherUserName = '';
   String? _lastIncomingMessageId;
@@ -46,6 +50,57 @@ class _ChatScreenState extends State<ChatScreen> {
     _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _loadConversation();
     });
+    _subscribeCloud();
+  }
+
+  void _subscribeCloud() {
+    final userId = _authService.currentUserId;
+    if (userId == null) return;
+    _cloudSub = ChatService()
+        .conversationStream(userId, widget.otherUserId)
+        .listen((cloudMessages) {
+      if (cloudMessages.isEmpty) return;
+      _mergeIntoMessages(cloudMessages);
+      if (mounted) setState(() {});
+    }, onError: (e) {
+      debugPrint('Chat cloud stream error: $e');
+    });
+  }
+
+  void _mergeIntoMessages(List<Map<String, dynamic>> incoming) {
+    final byId = <String, Map<String, dynamic>>{
+      for (final m in _messages)
+        if ((m['id'] ?? '').toString().isNotEmpty)
+          (m['id'] ?? '').toString(): m,
+    };
+    for (final m in incoming) {
+      final id = (m['id'] ?? '').toString();
+      if (id.isEmpty) continue;
+      final existing = byId[id];
+      if (existing == null) {
+        byId[id] = m;
+      } else if ((m['createdAt'] as Timestamp?)?.compareTo(
+              existing['createdAt'] as Timestamp? ?? Timestamp.now()) ==
+          1) {
+        byId[id] = m;
+      }
+    }
+    _messages
+      ..clear()
+      ..addAll(byId.values.toList()..sort(_byTimestamp));
+  }
+
+  int _byTimestamp(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final ta = _timestampOf(a);
+    final tb = _timestampOf(b);
+    return ta.compareTo(tb);
+  }
+
+  DateTime _timestampOf(Map<String, dynamic> m) {
+    final createdAt = m['createdAt'];
+    if (createdAt is Timestamp) return createdAt.toDate();
+    final raw = (m['timestamp'] ?? '').toString();
+    return DateTime.tryParse(raw) ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   Future<void> _resolveOtherUserName() async {
@@ -58,15 +113,17 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    try {
-      final patient = await _dbService.getPatient(widget.otherUserId);
-      if (patient != null && mounted) {
-        setState(() {
-          _resolvedOtherUserName = patient.name;
-        });
+    if (!kIsWeb) {
+      try {
+        final patient = await _dbService.getPatient(widget.otherUserId);
+        if (patient != null && mounted) {
+          setState(() {
+            _resolvedOtherUserName = patient.name;
+          });
+        }
+      } catch (e) {
+        debugPrint('Failed to resolve other user name: $e');
       }
-    } catch (e) {
-      debugPrint('Failed to resolve other user name: $e');
     }
   }
 
@@ -389,15 +446,34 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.clear();
 
     try {
-      // Always save to local database first
-      await _dbService.insertMessage(
-        id: messageId,
+      // Firestore is the primary channel (works on web + mobile).
+      await ChatService().sendMessage(
         senderId: senderId,
         receiverId: widget.otherUserId,
         body: message,
-        timestamp: timestampIso,
-        status: 'sent',
       );
+      if (widget.otherUserName.isNotEmpty &&
+          widget.otherUserName != 'Patient' &&
+          widget.otherUserName != 'Therapist') {
+        await ChatService().setOtherName(
+          myId: widget.otherUserId,
+          otherId: senderId,
+          name:
+              (_authService.getCurrentUser()?['name'] ?? 'You').toString(),
+        );
+      }
+
+      if (!kIsWeb) {
+        // Always save to local database first (mobile only)
+        await _dbService.insertMessage(
+          id: messageId,
+          senderId: senderId,
+          receiverId: widget.otherUserId,
+          body: message,
+          timestamp: timestampIso,
+          status: 'sent',
+        );
+      }
 
       // Try to sync with backend, but don't fail if it's not available
       await _backendApiService.sendMessage({
@@ -429,14 +505,16 @@ class _ChatScreenState extends State<ChatScreen> {
           final aiMessageId = const Uuid().v4();
           final aiTimestamp = DateTime.now().toIso8601String();
 
-          await _dbService.insertMessage(
-            id: aiMessageId,
-            senderId: widget.otherUserId,
-            receiverId: senderId,
-            body: aiResponse,
-            timestamp: aiTimestamp,
-            status: 'sent',
-          );
+          if (!kIsWeb) {
+            await _dbService.insertMessage(
+              id: aiMessageId,
+              senderId: widget.otherUserId,
+              receiverId: senderId,
+              body: aiResponse,
+              timestamp: aiTimestamp,
+              status: 'sent',
+            );
+          }
         } catch (e) {
           print('AI response error (using local messaging only): $e');
           // Fallback: just wait for therapist response via direct messaging
@@ -463,28 +541,37 @@ class _ChatScreenState extends State<ChatScreen> {
     final userId = _currentUserId;
     if (userId == null) return;
 
-    final local = await _dbService.getConversation(userId, widget.otherUserId);
+    final local = kIsWeb
+        ? <Map<String, dynamic>>[]
+        : await _dbService.getConversation(userId, widget.otherUserId);
     final remote =
         await _backendApiService.fetchConversation(userId, widget.otherUserId);
+    final cloud =
+        await ChatService().fetchConversation(userId, widget.otherUserId);
 
-    for (final msg in remote) {
-      await _dbService.insertMessage(
-        id: (msg['id'] ?? const Uuid().v4()).toString(),
-        senderId: (msg['senderId'] ?? '').toString(),
-        receiverId: (msg['receiverId'] ?? '').toString(),
-        body: (msg['body'] ?? '').toString(),
-        timestamp:
-            (msg['timestamp'] ?? DateTime.now().toIso8601String()).toString(),
-        status: (msg['status'] ?? 'sent').toString(),
-        isRead: (msg['isRead'] ?? msg['is_read'] ?? 0) as int? ?? 0,
-      );
+    if (!kIsWeb) {
+      for (final msg in remote) {
+        await _dbService.insertMessage(
+          id: (msg['id'] ?? const Uuid().v4()).toString(),
+          senderId: (msg['senderId'] ?? '').toString(),
+          receiverId: (msg['receiverId'] ?? '').toString(),
+          body: (msg['body'] ?? '').toString(),
+          timestamp:
+              (msg['timestamp'] ?? DateTime.now().toIso8601String()).toString(),
+          status: (msg['status'] ?? 'sent').toString(),
+          isRead: (msg['isRead'] ?? msg['is_read'] ?? 0) as int? ?? 0,
+        );
+      }
     }
 
-    final merged = remote.isNotEmpty
-        ? await _dbService.getConversation(userId, widget.otherUserId)
-        : local;
+    final all = [...local, ...remote, ...cloud];
+    _mergeIntoMessages(all);
+    final merged = _messages;
 
-    await _dbService.markConversationAsRead(userId, widget.otherUserId);
+    if (!kIsWeb) {
+      await _dbService.markConversationAsRead(userId, widget.otherUserId);
+    }
+    await ChatService().markRead(userId, widget.otherUserId, userId);
 
     // Auto-mark messages the other user sent to me as read on the backend,
     // so the sender sees a read receipt on their device.
@@ -501,15 +588,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     if (mounted) {
-      setState(() {
-        _messages
-          ..clear()
-          ..addAll(merged);
-      });
+      setState(() {});
     }
 
     final incoming =
-        merged.where((m) => m['senderId'] == widget.otherUserId).toList();
+        _messages.where((m) => m['senderId'] == widget.otherUserId).toList();
     if (incoming.isNotEmpty) {
       final newestIncoming = incoming.last;
       final newestId = newestIncoming['id']?.toString();
@@ -543,6 +626,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _cloudSub?.cancel();
     _messageController.dispose();
     super.dispose();
   }

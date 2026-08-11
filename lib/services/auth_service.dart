@@ -3,12 +3,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import '../models/patient.dart';
 import 'database_service.dart';
 import 'backend_api_service.dart';
 import 'token_service.dart';
+import 'fcm_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -128,10 +130,74 @@ class AuthService {
       );
       if (result['success'] != true) {
         await _tokenService.clearToken();
+        return;
       }
+
+      // After a successful sync the backend JWT is stored; register the FCM
+      // token so the server can push chat/clinical notifications to this
+      // device. Non-blocking and non-fatal.
+      unawaited(_registerFcmTokenAfterAuth(uid: uid));
     } catch (_) {
       await _tokenService.clearToken();
     }
+  }
+
+  /// Best-effort FCM token registration with the backend. Only runs on
+  /// platforms that have firebase_messaging (not web).
+  Future<void> _registerFcmTokenAfterAuth({required String uid}) async {
+    if (kIsWeb) return;
+    try {
+      final messaging = FCMService();
+      final token = await messaging.getToken();
+      if (token == null || token.isEmpty) return;
+      await _backendApi.registerFcmToken(userId: uid, token: token);
+    } catch (e) {
+      debugPrint('FCM token registration skipped: $e');
+    }
+  }
+
+  /// Update the user's display name across Firestore, the local SQLite
+  /// patient row (mobile), and the backend. Returns the updated user map.
+  Future<Map<String, dynamic>?> updateDisplayName(String newName) async {
+    final name = newName.trim();
+    if (name.length < 2) return null;
+
+    final uid = currentUserId;
+    if (uid == null) return null;
+
+    try {
+      await _firestore.collection('users').doc(uid).update({'name': name});
+    } catch (e) {
+      debugPrint('Firestore name update failed: $e');
+    }
+
+    // Refresh the in-memory + cached session data.
+    if (_cachedUserData != null) {
+      _cachedUserData = {..._cachedUserData!, 'name': name};
+      _userCache[uid] = _cachedUserData!;
+      await _cacheLocally(uid, _cachedUserData!);
+    }
+
+    // Mirror into the mobile SQLite patients table.
+    if (!kIsWeb && _currentRole == 'patient') {
+      try {
+        final existing = await _dbService.getPatient(uid);
+        if (existing != null) {
+          await _dbService.updatePatient(existing.copyWith(name: name));
+        }
+      } catch (e) {
+        debugPrint('SQLite name update failed: $e');
+      }
+    }
+
+    // Mirror into the backend (users + shared clinic tables).
+    try {
+      await _backendApi.updateMyName(name);
+    } catch (e) {
+      debugPrint('Backend name update failed: $e');
+    }
+
+    return _cachedUserData;
   }
 
   /// Signup with email and password

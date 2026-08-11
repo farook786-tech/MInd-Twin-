@@ -127,6 +127,7 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
   }
 
   Future<void> _loadJournals() async {
+    if (kIsWeb) return;
     try {
       final userId = _authService.currentUserId;
       if (userId != null) {

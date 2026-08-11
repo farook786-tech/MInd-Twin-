@@ -404,7 +404,7 @@ router.get('/public/treatment-plans', authMiddleware, (req, res) => {
   }
 });
 
-router.post('/public/chat/send', authMiddleware, (req, res) => {
+router.post('/public/chat/send', authMiddleware, async (req, res) => {
   try {
     const database = db.getDB();
     const {
@@ -449,6 +449,24 @@ router.post('/public/chat/send', authMiddleware, (req, res) => {
       body,
       timestamp || new Date().toISOString()
     );
+
+    // Fire a realtime push to the recipient so they get a notification even
+    // when the app is closed or in the background.
+    try {
+      const NotificationService = require('../services/NotificationService');
+      const notificationService = new NotificationService();
+      await notificationService.sendChatMessageNotification({
+        recipientUserId: receiverId,
+        senderName: senderName || 'New message',
+        body,
+        conversationPair: [senderId, receiverId],
+        senderId,
+        recipientId: receiverId,
+      });
+    } catch (error) {
+      // Notification failures must never fail the message send.
+      console.warn('[Sync] Chat push notification failed:', error.message);
+    }
 
     res.status(201).json({ success: true, id: messageId, message: 'Message synced' });
   } catch (error) {

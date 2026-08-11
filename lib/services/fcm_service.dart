@@ -1,11 +1,18 @@
+import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'notification_service.dart';
+import 'auth_service.dart';
+import '../screens/chat/chat_screen.dart';
 
 class FCMService {
   static final FCMService _instance = FCMService._internal();
   static bool _initialized = false;
   FirebaseMessaging? _messaging;
+
+  /// Set from the root MaterialApp so chat notifications can deep-link to
+  /// the conversation screen.
+  static GlobalKey<NavigatorState>? navigatorKey;
   
   factory FCMService() {
     return _instance;
@@ -45,9 +52,12 @@ class FCMService {
       // Handle foreground messages
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         print('Got a message whilst in the foreground!');
-        if (message.notification != null) {
-          _handleRemoteMessage(message);
-        }
+        _handleRemoteMessage(message);
+      });
+
+      // Handle app in background, notification tapped to open
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        _handleRemoteMessage(message);
       });
 
       // Handle background messages
@@ -103,9 +113,15 @@ class FCMService {
   void _handleRemoteMessage(RemoteMessage message) {
     print('Message data: ${message.data}');
 
+    // Chat push notifications deep-link to the conversation.
+    if (message.data['notificationType'] == 'chat_message') {
+      _openChat(message.data);
+      return;
+    }
+
     if (message.notification != null) {
       print('Message also contained a notification: ${message.notification}');
-      
+
       final title = message.notification!.title;
       final body = message.notification!.body;
       final data = message.data;
@@ -126,6 +142,33 @@ class FCMService {
         _showCustomNotification(title ?? 'Notification', body ?? '');
       }
     }
+  }
+
+  /// Deep-link a chat push into the matching conversation screen.
+  void _openChat(Map<String, dynamic> data) {
+    final otherUserId = data['senderId']?.toString();
+    final otherUserName = data['senderName']?.toString() ?? 'Contact';
+    if (otherUserId == null || otherUserId.isEmpty) return;
+
+    // The sender is the other party; the recipient is the current user, so
+    // the "isTherapist" flag is the inverse of the current user's role.
+    final isTherapist = AuthService().currentRole != 'therapist';
+
+    void navigate() {
+      final nav = navigatorKey?.currentState;
+      if (nav == null) return;
+      nav.push(MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          otherUserId: otherUserId,
+          otherUserName: otherUserName,
+          isTherapist: isTherapist,
+        ),
+      ));
+    }
+
+    // The first frame may not exist yet when the app was launched from a
+    // notification tap; defer until it does.
+    WidgetsBinding.instance.addPostFrameCallback((_) => navigate());
   }
 
   /// Show custom notification via local notifications

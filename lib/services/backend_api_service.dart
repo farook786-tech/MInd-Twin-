@@ -365,13 +365,69 @@ class BackendApiService {
     }
   }
 
-  /// Register FCM token with backend
-  /// Sync patient data to backend
-  /// Pull updates from backend
-  /// Create crisis alert on backend
-  /// Add daily log to backend
+  /// Register (or refresh) the device FCM token with the backend so the
+  /// server can push chat/clinical notifications to this device.
+  /// Returns true when the backend accepted the token.
+  Future<bool> registerFcmToken({
+    required String userId,
+    required String token,
+    String platform = 'android',
+  }) async {
+    final baseUrl = await _resolveBaseUrl();
+    if (baseUrl == null) return false;
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/users/$userId/fcm-token'),
+        headers: headers,
+        body: jsonEncode({'token': token, 'platform': platform}),
+      );
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (_) {
+      return false;
+    }
+  }
 
+  /// Fetch the authenticated user's backend profile.
+  /// Returns { user } map or null when unreachable.
+  Future<Map<String, dynamic>?> fetchMyProfile() async {
+    final baseUrl = await _resolveBaseUrl();
+    if (baseUrl == null) return null;
+    try {
+      final headers = await _getHeaders();
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/users/me'),
+        headers: headers,
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded['user'] as Map<String, dynamic>?;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 
+  /// Update the authenticated user's display name on the backend.
+  /// Returns true when the backend accepted the change.
+  Future<bool> updateMyName(String name) async {
+    final baseUrl = await _resolveBaseUrl();
+    if (baseUrl == null) return false;
+    try {
+      final headers = await _getHeaders();
+      final response = await http.put(
+        Uri.parse('$baseUrl/api/users/me'),
+        headers: headers,
+        body: jsonEncode({'name': name}),
+      );
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<bool> bookSharedAppointment(Map<String, dynamic> payload) async {
     final baseUrl = await _resolveBaseUrl();

@@ -273,7 +273,10 @@ class _PatientShell extends StatelessWidget {
           colors: [Color(0xFF0A0A0F), Color(0xFF10131C)],
         ),
       ),
-      child: child,
+      child: Material(
+        color: Colors.transparent,
+        child: child,
+      ),
     );
   }
 }

@@ -200,6 +200,88 @@ class NotificationService {
   }
 
   /**
+   * Send a push notification for a new chat message to the recipient.
+   * Both patients and therapists use this; messages arrive with the FCM
+   * data payload so the app can deep-link into the conversation.
+   */
+  async sendChatMessageNotification({
+    recipientUserId,
+    senderName,
+    body,
+    conversationPair, // sorted: [userA, userB] used to build the Firestore conv id
+    senderId,
+    recipientId,
+  }) {
+    const message = {
+      notification: {
+        title: senderName || 'New message',
+        body: (body || '').length > 200 ? `${(body || '').slice(0, 197)}...` : (body || ''),
+      },
+      data: {
+        notificationType: 'chat_message',
+        senderId: senderId || '',
+        recipientId: recipientId || '',
+        senderName: senderName || '',
+        body: body || '',
+        conversationId:
+          Array.isArray(conversationPair) && conversationPair.length === 2
+            ? [conversationPair[0], conversationPair[1]].sort().join('__')
+            : '',
+        timestamp: new Date().toISOString(),
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          channelId: 'chat_messages',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        headers: { 'apns-priority': '10' },
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
+      },
+      webpush: {
+        headers: { TTL: '3600' },
+        notification: {
+          title: senderName || 'New message',
+          body: (body || '').length > 200 ? `${(body || '').slice(0, 197)}...` : (body || ''),
+          icon: '/notification-icon.png',
+          badge: '/notification-badge.png',
+          tag: `msg-${senderId}`,
+        },
+      },
+    };
+
+    if (!this.initialized) {
+      console.log(`[CHAT NOTIFICATION QUEUED] To ${recipientUserId}: ${senderName} - ${(body || '').slice(0, 40)}`);
+      return { queued: true, delivered: false };
+    }
+
+    try {
+      const tokens = this._getTokensForUser(recipientUserId);
+      if (!tokens.length) {
+        console.log(`[CHAT NOTIFICATION QUEUED] No device for ${recipientUserId}`);
+        return { queued: true, delivered: false };
+      }
+      const result = await this._sendToTokens(tokens, message);
+      if (result.delivered > 0) {
+        console.log(`[CHAT NOTIFICATION SENT] ${result.delivered} device(s) for ${recipientUserId}`);
+        return { delivered: true, queued: false };
+      }
+      return { queued: true, delivered: false };
+    } catch (error) {
+      console.error('Send chat message notification error:', error);
+      return { delivered: false, queued: true, error: error.message };
+    }
+  }
+
+  /**
    * Send engagement reminder to patient
    * Smart timing based on engagement risk and patient habits
    */

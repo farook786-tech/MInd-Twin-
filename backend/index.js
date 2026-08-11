@@ -94,6 +94,7 @@ const authRateLimit = TokenBucketMiddleware({ capacity: 10, windowMs: 60 * 1000 
 
 // Routes
 app.use('/api/auth', authRateLimit);
+app.use('/api/auth', authRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/therapists', therapistRoutes);
 app.use('/api/messages', messageRoutes);

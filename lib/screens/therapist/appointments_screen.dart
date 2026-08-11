@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
@@ -58,9 +59,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     setState(() => _isLoading = true);
     try {
       final therapistId = _authService.currentUserId ?? '';
-      final localAppointments =
-          await _dbService.getAppointments(therapistId, isTherapist: true);
-      final patients = await _dbService.getAllPatients();
+      final localAppointments = kIsWeb
+          ? <Appointment>[]
+          : await _dbService.getAppointments(therapistId, isTherapist: true);
+      final patients = kIsWeb
+          ? <Patient>[]
+          : await _dbService.getAllPatients();
 
       final remoteRows = await _backendApiService.fetchSharedAppointments();
       final remoteAppointments = remoteRows.map((row) {

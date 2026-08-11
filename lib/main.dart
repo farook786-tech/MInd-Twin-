@@ -58,6 +58,7 @@ void main() async {
   
   // Initialize FCM for push notifications (non-blocking, gracefully fails if not configured)
   if (!kIsWeb) {
+    FCMService.navigatorKey = GlobalKey<NavigatorState>();
     FCMService().initialize().catchError((e) {
       print('FCM not available: $e');
     });
@@ -89,6 +90,7 @@ class MindTwinApp extends StatelessWidget {
       title: 'MindTwin - AI Digital Twin Mental Health',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkMedicalTheme,
+      navigatorKey: FCMService.navigatorKey,
       routes: routes,
       home: const AppEntryScreen(),
     );
