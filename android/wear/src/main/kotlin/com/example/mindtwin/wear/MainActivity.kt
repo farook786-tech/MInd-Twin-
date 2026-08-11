@@ -1,6 +1,7 @@
 package com.example.mindtwin.wear
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
@@ -30,8 +31,13 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.values.all { it }) {
+        val healthGranted = listOf(
+            Manifest.permission.BODY_SENSORS,
+            "android.permission.health.READ_HEART_RATE"
+        ).all { permissions[it] == true }
+        if (healthGranted) {
             startPassiveMonitoring()
+            startHeartRateService()
         } else {
             Log.w("MindTwinWear", "Health permissions denied: $permissions")
         }
@@ -48,15 +54,27 @@ class MainActivity : ComponentActivity() {
     private fun checkPermissionsAndStart() {
         val missing = listOf(
             Manifest.permission.BODY_SENSORS,
-            "android.permission.health.READ_HEART_RATE"
+            "android.permission.health.READ_HEART_RATE",
+            Manifest.permission.POST_NOTIFICATIONS
         ).filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
 
         if (missing.isEmpty()) {
             startPassiveMonitoring()
+            startHeartRateService()
         } else {
             requestPermissionsLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    private fun startHeartRateService() {
+        try {
+            val intent = Intent(this, HeartRateService::class.java)
+            ContextCompat.startForegroundService(this, intent)
+            Log.d("MindTwinWear", "HeartRateService start requested.")
+        } catch (e: Exception) {
+            Log.e("MindTwinWear", "Failed to start HeartRateService: ", e)
         }
     }
 
