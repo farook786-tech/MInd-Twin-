@@ -27,11 +27,13 @@ class MainActivity : ComponentActivity() {
         HealthServices.getClient(this).passiveMonitoringClient
     }
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
+    private val requestPermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions.values.all { it }) {
             startPassiveMonitoring()
+        } else {
+            Log.w("MindTwinWear", "Health permissions denied: $permissions")
         }
     }
 
@@ -44,14 +46,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkPermissionsAndStart() {
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BODY_SENSORS
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
+        val missing = listOf(
+            Manifest.permission.BODY_SENSORS,
+            "android.permission.health.READ_HEART_RATE"
+        ).filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (missing.isEmpty()) {
             startPassiveMonitoring()
         } else {
-            requestPermissionLauncher.launch(Manifest.permission.BODY_SENSORS)
+            requestPermissionsLauncher.launch(missing.toTypedArray())
         }
     }
 
