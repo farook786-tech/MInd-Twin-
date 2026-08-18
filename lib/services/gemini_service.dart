@@ -37,28 +37,26 @@ class GeminiService {
     int? statusCode;
 
     try {
-      if (_apiService.isConfigured) {
-        final manualUrl = await _apiService.getManualBaseUrl();
-        final baseUrl = manualUrl ?? 'http://127.0.0.1:5000';
+      final baseUrl =
+          await _apiService.resolveBaseUrl() ?? 'http://localhost:5000';
 
-        final response = await http
-            .post(
-              Uri.parse('$baseUrl/api/gemini/chat'),
-              headers: TokenService().getAuthHeaders(),
-              body: jsonEncode({
-                'prompt': userPrompt,
-                'systemPrompt': systemPrompt,
-                'history': history ?? [],
-              }),
-            )
-            .timeout(const Duration(seconds: 20));
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/gemini/chat'),
+            headers: TokenService().getAuthHeaders(),
+            body: jsonEncode({
+              'prompt': userPrompt,
+              'systemPrompt': systemPrompt,
+              'history': history ?? [],
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
 
-        statusCode = response.statusCode;
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          if (data['success'] == true && data['response'] != null) {
-            return data['response'].toString();
-          }
+      statusCode = response.statusCode;
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true && data['response'] != null) {
+          return data['response'].toString();
         }
       }
     } catch (_) {

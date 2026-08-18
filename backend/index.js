@@ -37,7 +37,7 @@ const BASE_PORT = Number(process.env.PORT || 5000);
 const MAX_PORT_ATTEMPTS = 20;
 
 // Middleware
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000,http://127.0.0.1:8080')
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000,http://127.0.0.1:8080,http://localhost:8080')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);

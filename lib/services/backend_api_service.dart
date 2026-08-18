@@ -161,6 +161,8 @@ class BackendApiService {
     return _resolvedBaseUrl;
   }
 
+  Future<String?> resolveBaseUrl() => _resolveBaseUrl();
+
   String _normalizeBaseUrl(String url) {
     var normalized = url.trim();
     if (normalized.endsWith('/')) {
@@ -191,18 +193,16 @@ class BackendApiService {
       }
     }
 
-    if (!kIsWeb) {
-      const localCandidates = [
-        'http://10.0.2.2:5000',
-        'http://127.0.0.1:5000',
-        'http://localhost:5000',
-      ];
-      for (final candidate in localCandidates) {
-        final ok = await testConnection(baseUrl: candidate);
-        if (ok) {
-          _resolvedBaseUrl = candidate;
-          return _resolvedBaseUrl;
-        }
+    const localCandidates = [
+      'http://localhost:5000',
+      'http://127.0.0.1:5000',
+      if (!kIsWeb) 'http://10.0.2.2:5000',
+    ];
+    for (final candidate in localCandidates) {
+      final ok = await testConnection(baseUrl: candidate);
+      if (ok) {
+        _resolvedBaseUrl = candidate;
+        return _resolvedBaseUrl;
       }
     }
 

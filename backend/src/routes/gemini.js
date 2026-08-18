@@ -7,6 +7,9 @@ const router = express.Router();
 // AI endpoints proxy to paid external providers; cap usage per authenticated user.
 const aiRateLimit = TokenBucketMiddleware({ capacity: 20, windowMs: 60 * 60 * 1000 });
 
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const GEMINI_ENDPOINT =
@@ -18,11 +21,11 @@ const FALLBACK_TEXT =
 
 /**
  * Maps chat history entries (e.g. "user: hello", "assistant: hi")
- * into Gemini content turns, merging consecutive same-role turns
- * because the Gemini API requires alternating roles.
+ * into OpenAI-style {role, content} turns. Merges consecutive same-role
+ * turns because some providers require alternating roles.
  */
 function mapHistory(history = []) {
-  const contents = [];
+  const messages = [];
   for (const entry of history) {
     if (typeof entry !== 'string') continue;
     const idx = entry.indexOf(': ');
@@ -31,21 +34,98 @@ function mapHistory(history = []) {
     const text = entry.slice(idx + 2).trim();
     if (!text) continue;
 
-    const geminiRole = role === 'user' ? 'user' : 'model';
-    const last = contents[contents.length - 1];
-    if (last && last.role === geminiRole) {
-      last.parts[0].text += '\n' + text;
+    const mappedRole = role === 'user' ? 'user' : 'assistant';
+    const last = messages[messages.length - 1];
+    if (last && last.role === mappedRole) {
+      last.content += '\n' + text;
     } else {
-      contents.push({ role: geminiRole, parts: [{ text }] });
+      messages.push({ role: mappedRole, content: text });
     }
   }
-  return contents;
+  return messages;
+}
+
+/**
+ * Try OpenRouter (OpenAI-compatible chat completions) first. It is the
+ * primary, proven provider for MindTwin. Returns text or null.
+ */
+async function callOpenRouter({ systemPrompt, history, prompt }) {
+  if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY.includes('YOUR_')) return null;
+  const messages = [];
+  if (systemPrompt && systemPrompt.trim()) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  messages.push(...mapHistory(history || []));
+  messages.push({ role: 'user', content: prompt });
+
+  const response = await axios.post(
+    'https://openrouter.ai/api/v1/chat/completions',
+    {
+      model: OPENROUTER_MODEL,
+      messages,
+      max_tokens: 400,
+      temperature: 0.7,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'http://localhost:5000',
+      },
+      timeout: 20000,
+    }
+  );
+  return (response.data?.choices?.[0]?.message?.content || '').trim();
+}
+
+/**
+ * Fall back to the Gemini API when OpenRouter is not configured.
+ * Returns text or null.
+ */
+async function callGemini({ systemPrompt, history, prompt }) {
+  if (!GEMINI_API_KEY) return null;
+
+  const geminiContents = [
+    ...mapHistory(history || []).map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    })),
+    { role: 'user', parts: [{ text: prompt }] },
+  ];
+
+  const body = {
+    contents: geminiContents,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 400,
+    },
+  };
+
+  if (systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim()) {
+    body.systemInstruction = { parts: [{ text: systemPrompt }] };
+  }
+
+  const response = await axios.post(
+    `${GEMINI_ENDPOINT}/${GEMINI_MODEL}:generateContent`,
+    body,
+    {
+      headers: { 'x-goog-api-key': GEMINI_API_KEY },
+      timeout: 20000,
+    }
+  );
+
+  return (
+    response.data?.candidates?.[0]?.content?.parts
+      ?.map((p) => p.text)
+      .join('')
+      .trim() || null
+  );
 }
 
 /**
  * POST /api/gemini/chat
- * Proxies a chat request to the Gemini API. Keeps the API key
- * server-side instead of in the Flutter client.
+ * Proxies a chat request to a real LLM provider, keeping API keys
+ * server-side instead of in the Flutter client. Tries OpenRouter first,
+ * then Gemini, then a local fallback.
  * Body: { prompt: string, systemPrompt?: string, history?: string[] }
  * Response: { success: true, response: string }
  */
@@ -57,48 +137,32 @@ router.post('/chat', authMiddleware, aiRateLimit, async (req, res) => {
       return res.status(400).json({ success: false, error: 'prompt is required' });
     }
 
-    if (!GEMINI_API_KEY) {
-      console.warn('[Gemini] GEMINI_API_KEY not set; returning fallback.');
+    let text = null;
+
+    // 1. Primary provider: OpenRouter (works for sure; validated live).
+    try {
+      text = await callOpenRouter({ systemPrompt, history, prompt });
+    } catch (error) {
+      console.warn('[Gemini] OpenRouter failed, trying Gemini:', error.message);
+    }
+
+    // 2. Fallback provider: Gemini.
+    if (!text) {
+      try {
+        text = await callGemini({ systemPrompt, history, prompt });
+      } catch (error) {
+        console.error('[Gemini] Error:', error.message);
+      }
+    }
+
+    if (!text) {
+      console.warn('[Gemini] No provider available; returning fallback.');
       return res.json({ success: true, response: FALLBACK_TEXT, offline: true });
     }
 
-    const contents = [
-      ...mapHistory(history || []),
-      { role: 'user', parts: [{ text: prompt }] },
-    ];
-
-    const body = {
-      contents,
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 400,
-      },
-    };
-
-    if (systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim()) {
-      body.systemInstruction = { parts: [{ text: systemPrompt }] };
-    }
-
-    const response = await axios.post(
-      `${GEMINI_ENDPOINT}/${GEMINI_MODEL}:generateContent`,
-      body,
-      {
-        headers: { 'x-goog-api-key': GEMINI_API_KEY },
-        timeout: 20000,
-      }
-    );
-
-    const text =
-      response.data?.candidates?.[0]?.content?.parts
-        ?.map((p) => p.text)
-        .join('')
-        .trim() || '';
-
-    res.json({ success: true, response: text || FALLBACK_TEXT });
+    res.json({ success: true, response: text });
   } catch (error) {
     console.error('[Gemini] Error:', error.message);
-    // Never echo provider internals; keep the client informed with a real error
-    // status instead of masking failures as HTTP 200.
     res.status(502).json({
       success: false,
       error: 'Upstream model request failed. Please try again.',

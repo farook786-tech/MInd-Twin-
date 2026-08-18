@@ -1,7 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../../core/theme/app_theme.dart';
@@ -9,6 +6,7 @@ import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/database_service.dart';
+import '../../utils/export_storage.dart';
 
 class EthicsControlScreen extends StatefulWidget {
   const EthicsControlScreen({super.key});
@@ -519,14 +517,6 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
   }
 
   Future<void> _downloadTotalDataPdf() async {
-    if (kIsWeb) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PDF export is not available on web')),
-      );
-      return;
-    }
-
     setState(() => _isLoading = true);
 
     try {
@@ -597,16 +587,11 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
         ),
       );
       
-      // Get the application's document directory
-      final appDir = await getApplicationDocumentsDirectory();
+      // Save the export (documents dir on native, browser download on web)
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final fileName = 'mindtwin_total_data_$timestamp.pdf';
-      final filePath = '${appDir.path}/$fileName';
-      
-      // Create and write the file
-      final file = File(filePath);
-      await file.writeAsBytes(await pdf.save());
-      
+      final savedPath = await saveExportFile(fileName, await pdf.save());
+
       // Save export date to database
       await _dbService.setDataExportDate(userId);
 
@@ -614,7 +599,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ PDF downloaded: $fileName'),
+            content: Text('✅ PDF downloaded: $savedPath'),
             backgroundColor: AppTheme.safeGreen,
             duration: const Duration(seconds: 4),
           ),
