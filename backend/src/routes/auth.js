@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const DatabaseService = require('../database/Database');
 const { authMiddleware } = require('../middleware/auth');
+const { getFirebaseAdmin } = require('../services/FirebaseAdmin');
 
 const router = express.Router();
 const db = DatabaseService.getInstance();
@@ -192,12 +193,40 @@ router.post('/register-therapist', authMiddleware, (req, res) => {
 });
 
 // Firebase Token Exchange & Account Sync Endpoint
-router.post('/firebase-sync', (req, res) => {
+//
+// SECURITY: identity comes ONLY from a Firebase ID token verified with the
+// Admin SDK. Client-supplied uid/email are ignored; trusting them would let
+// anyone on the network mint a backend JWT for any account (e.g. a
+// therapist's) just by knowing the email address.
+router.post('/firebase-sync', async (req, res) => {
   try {
-    const { uid, email, name, role } = req.body;
+    const { name, role } = req.body;
+    const bearer = req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7)
+      : null;
+    const idToken = req.body.idToken || bearer;
 
-    if (!uid || !email) {
-      return res.status(400).json({ error: 'Firebase uid and email required' });
+    if (!idToken || typeof idToken !== 'string') {
+      return res.status(401).json({ error: 'Firebase ID token required' });
+    }
+
+    const firebaseAdmin = getFirebaseAdmin();
+    if (!firebaseAdmin) {
+      console.error('[Auth] firebase-sync unavailable: Firebase Admin SDK not configured');
+      return res.status(503).json({ error: 'Authentication service unavailable' });
+    }
+
+    let decoded;
+    try {
+      decoded = await firebaseAdmin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      return res.status(401).json({ error: 'Invalid or expired Firebase ID token' });
+    }
+
+    const uid = decoded.uid;
+    const email = decoded.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Firebase account has no email address' });
     }
 
     const database = db.getDB();

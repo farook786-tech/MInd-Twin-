@@ -1,7 +1,6 @@
 const admin = require('firebase-admin');
-const fs = require('fs');
-const path = require('path');
 const Database = require('../database/Database');
+const { getFirebaseAdmin } = require('./FirebaseAdmin');
 
 /**
  * NotificationService - Real-time FCM notifications for therapists
@@ -10,35 +9,9 @@ const Database = require('../database/Database');
  */
 class NotificationService {
   constructor() {
-    try {
-      if (!admin.apps.length) {
-        // Production (Render): pass the service account as an env var, either as
-        // raw JSON or base64-encoded (base64 avoids newline/escaping issues).
-        // Local dev: GOOGLE_APPLICATION_CREDENTIALS points to the JSON file.
-        const inlineJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-        const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-        let serviceAccount = null;
-        if (inlineJson) {
-          const raw = inlineJson.trim();
-          serviceAccount = JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8'));
-        } else if (credentialsPath) {
-          const resolvedPath = path.resolve(process.cwd(), credentialsPath);
-          serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
-        }
-
-        if (serviceAccount) {
-          admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount),
-            projectId: serviceAccount.project_id,
-          });
-        } else {
-          admin.initializeApp();
-        }
-      }
-      this.initialized = true;
-    } catch (error) {
-      console.warn('Firebase Admin SDK not initialized. Notifications disabled.', error.message);
-      this.initialized = false;
+    this.initialized = Boolean(getFirebaseAdmin());
+    if (!this.initialized) {
+      console.warn('Firebase Admin SDK not initialized. Notifications disabled.');
     }
   }
 

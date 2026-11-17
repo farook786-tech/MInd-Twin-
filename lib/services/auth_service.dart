@@ -61,6 +61,17 @@ class AuthService {
           _userCache[user.uid] = _cachedUserData!;
           _localUserId = null;
         }
+        // Refresh the backend JWT on every launch of a persisted Firebase
+        // session. Without this the 7-day backend token silently expires (or
+        // was never issued if the backend was offline at login) and every
+        // backend call - chat, ML crisis check, SOS - fails with 401.
+        // Non-blocking so startup never waits on the network.
+        unawaited(_syncBackendToken(
+          uid: user.uid,
+          email: user.email ?? '',
+          name: _cachedUserData?['name']?.toString(),
+          role: _currentRole,
+        ));
       } else {
         if (_localUserId == null) {
           _currentRole = null;
@@ -122,9 +133,14 @@ class AuthService {
     String? role,
   }) async {
     try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      final idToken = await firebaseUser?.getIdToken();
+      if (firebaseUser == null || firebaseUser.uid != uid || idToken == null) {
+        await _tokenService.clearToken();
+        return;
+      }
       final result = await _backendApi.firebaseSync(
-        uid: uid,
-        email: email,
+        idToken: idToken,
         name: name,
         role: role,
       );
