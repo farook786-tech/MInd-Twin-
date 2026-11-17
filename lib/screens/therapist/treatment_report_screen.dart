@@ -34,7 +34,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
 
   Future<void> _initialize() async {
     try {
-      _therapistId = _authService.currentUserId ?? 'therapist_main';
+      _therapistId = _authService.currentUserId; // FirebaseAuth uid; null = signed out
       setState(() {});
     } catch (e) {
       debugPrint('Failed to resolve therapist id: $e');

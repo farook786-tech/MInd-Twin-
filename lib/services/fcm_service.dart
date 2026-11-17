@@ -1,189 +1,176 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'notification_service.dart';
-import 'auth_service.dart';
-import '../screens/chat/chat_screen.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
+import 'notification_router.dart';
+import 'notification_service.dart';
+import 'push_token_service.dart';
+
+/// Background / terminated-state handler. Must be a top-level function.
+///
+/// Pushes that carry a `notification` block are displayed by the OS itself
+/// (on the Android channel chosen by the Cloud Function), so only data-only
+/// pushes need a local notification here.
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  if (message.notification != null) return;
+  if (message.data.isEmpty) return;
+  try {
+    await NotificationService.initialize();
+    await NotificationService.showForData(message.data);
+  } catch (e) {
+    debugPrint('Background push handling failed: $e');
+  }
+}
+
+/// Firebase Cloud Messaging wiring. Pushes are sent by Cloud Functions
+/// (docs/DATA_MODEL.md); this class only receives and displays them.
+///
+/// * Foreground message -> local notification (suppressed for the chat that
+///   is currently open). Never navigates by itself.
+/// * Notification tap (background, terminated, or local) -> navigation via
+///   [NotificationRouter].
+/// * Token registration is delegated to [PushTokenService], which reacts to
+///   FirebaseAuth sign-in on its own.
 class FCMService {
   static final FCMService _instance = FCMService._internal();
-  static bool _initialized = false;
-  FirebaseMessaging? _messaging;
-
-  /// Set from the root MaterialApp so chat notifications can deep-link to
-  /// the conversation screen.
-  static GlobalKey<NavigatorState>? navigatorKey;
-  
-  factory FCMService() {
-    return _instance;
-  }
-
+  factory FCMService() => _instance;
   FCMService._internal();
 
-  /// Initialize FCM
-  Future<void> initialize() async {
+  Future<void>? _initFuture;
+  bool _initialized = false;
+  final List<StreamSubscription<RemoteMessage>> _subs = [];
+
+  /// Navigator used for notification deep links. Prefer passing
+  /// [appNavigatorKey] to MaterialApp; this setter remains so existing code
+  /// assigning a key keeps working (the same key must go to MaterialApp).
+  static GlobalKey<NavigatorState> get navigatorKey =>
+      NotificationRouter.navigatorKey;
+  static set navigatorKey(GlobalKey<NavigatorState>? key) {
+    if (key != null) NotificationRouter.navigatorKey = key;
+  }
+
+  static bool get isSupported =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  bool get isInitialized => _initialized;
+
+  /// Idempotent; safe to call before or after AuthService.init(). Requires
+  /// Firebase.initializeApp() to have completed.
+  Future<void> initialize() {
+    if (!isSupported) return Future.value();
+    return _initFuture ??= _initialize();
+  }
+
+  Future<void> _initialize() async {
+    if (Firebase.apps.isEmpty) {
+      debugPrint('FCMService: Firebase not initialised; push disabled');
+      _initFuture = null; // allow retry after Firebase.initializeApp
+      return;
+    }
+
+    // Must be registered before any await so it is in place for the
+    // background isolate as early as possible.
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
     try {
-      // Initialize Firebase if not already done
-      if (Firebase.apps.isEmpty) {
-        // Note: In a real app, set up google-services.json and google-info.plist
-        // For now, this will gracefully fail and fall back to local notifications
-        print('Firebase not configured - using local notifications only');
-        return;
+      await NotificationService.initialize();
+
+      final messaging = FirebaseMessaging.instance;
+      try {
+        // On Android 13+ this triggers the POST_NOTIFICATIONS runtime prompt.
+        final settings = await messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+          provisional: false,
+        );
+        debugPrint(
+            'Notification permission: ${settings.authorizationStatus.name}');
+      } catch (e) {
+        debugPrint('FCMService: permission request failed: $e');
       }
 
-      // Only access FirebaseMessaging after Firebase is initialized
-      _messaging = FirebaseMessaging.instance;
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        // We present foreground pushes ourselves via local notifications.
+        await messaging.setForegroundNotificationPresentationOptions(
+          alert: false,
+          badge: true,
+          sound: false,
+        );
+      }
 
-      // Request notification permissions
-      final settings = await _messaging!.requestPermission(
-        alert: true,
-        announcement: false,
-        badge: true,
-        provisional: false,
-        sound: true,
-      );
+      _subs.add(FirebaseMessaging.onMessage.listen(_onForegroundMessage));
+      _subs.add(FirebaseMessaging.onMessageOpenedApp.listen(
+        (message) => NotificationRouter.instance.handle(message.data),
+      ));
 
-      print('User granted notification permission: ${settings.authorizationStatus}');
+      // Token registration follows FirebaseAuth state from here on.
+      PushTokenService.instance.start();
 
-      // Get FCM token
-      final token = await _messaging!.getToken();
-      print('FCM Token: $token');
-
-      // Handle foreground messages
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        print('Got a message whilst in the foreground!');
-        _handleRemoteMessage(message);
-      });
-
-      // Handle app in background, notification tapped to open
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        _handleRemoteMessage(message);
-      });
-
-      // Handle background messages
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-      // Handle message click on terminated app
-      final initialMessage = await _messaging!.getInitialMessage();
-      if (initialMessage != null) {
-        _handleRemoteMessage(initialMessage);
+      // App launched by tapping a push while terminated.
+      final initial = await messaging.getInitialMessage();
+      if (initial != null) {
+        NotificationRouter.instance.handle(initial.data);
+      } else {
+        // App launched by tapping one of our local notifications.
+        final launch = await NotificationService.launchPayload();
+        if (launch != null) NotificationRouter.instance.handle(launch);
       }
 
       _initialized = true;
     } catch (e) {
-      print('FCM initialization error (falling back to local notifications): $e');
-      // Graceful fallback - local notifications will still work
+      debugPrint('FCMService initialization error: $e');
     }
   }
 
-  /// Get FCM token for backend registration
+  Future<void> _onForegroundMessage(RemoteMessage message) async {
+    final data = message.data;
+    final isChat = data['type'] == 'chat' ||
+        data['notificationType'] == 'chat_message';
+    if (isChat) {
+      final chatId = data['chatId']?.toString();
+      final active = NotificationRouter.activeChatId;
+      if (active != null && chatId == active) return; // already on screen
+    }
+    await NotificationService.showForData(
+      data,
+      title: message.notification?.title,
+      body: message.notification?.body,
+    );
+  }
+
+  /// Current FCM token (null when unsupported / unavailable).
   Future<String?> getToken() async {
+    if (!isSupported || Firebase.apps.isEmpty) return null;
     try {
-      if (!_initialized || _messaging == null) return null;
-      return await _messaging!.getToken();
+      return await FirebaseMessaging.instance.getToken();
     } catch (e) {
-      print('Error getting FCM token: $e');
+      debugPrint('Error getting FCM token: $e');
       return null;
     }
   }
 
-  /// Subscribe to topic for group messages
   Future<void> subscribeToTopic(String topic) async {
+    if (!isSupported || Firebase.apps.isEmpty) return;
     try {
-      if (!_initialized || _messaging == null) return;
-      await _messaging!.subscribeToTopic(topic);
-      print('Subscribed to topic: $topic');
+      await FirebaseMessaging.instance.subscribeToTopic(topic);
     } catch (e) {
-      print('Error subscribing to topic: $e');
+      debugPrint('Error subscribing to topic: $e');
     }
   }
 
-  /// Unsubscribe from topic
   Future<void> unsubscribeFromTopic(String topic) async {
+    if (!isSupported || Firebase.apps.isEmpty) return;
     try {
-      if (!_initialized || _messaging == null) return;
-      await _messaging!.unsubscribeFromTopic(topic);
-      print('Unsubscribed from topic: $topic');
+      await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
     } catch (e) {
-      print('Error unsubscribing from topic: $e');
+      debugPrint('Error unsubscribing from topic: $e');
     }
-  }
-
-  /// Handle incoming remote message
-  void _handleRemoteMessage(RemoteMessage message) {
-    print('Message data: ${message.data}');
-
-    // Chat push notifications deep-link to the conversation.
-    if (message.data['notificationType'] == 'chat_message') {
-      _openChat(message.data);
-      return;
-    }
-
-    if (message.notification != null) {
-      print('Message also contained a notification: ${message.notification}');
-
-      final title = message.notification!.title;
-      final body = message.notification!.body;
-      final data = message.data;
-
-      // Route to appropriate handler
-      if (data['type'] == 'sos') {
-        NotificationService.showSosAlert(
-          patientName: data['patientName'] ?? 'Patient',
-          reason: data['reason'] ?? 'SOS Alert',
-        );
-      } else if (data['type'] == 'message') {
-        NotificationService.showNewMessage(
-          senderName: data['senderName'] ?? 'User',
-          preview: body ?? 'New message',
-        );
-      } else {
-        // Generic notification
-        _showCustomNotification(title ?? 'Notification', body ?? '');
-      }
-    }
-  }
-
-  /// Deep-link a chat push into the matching conversation screen.
-  void _openChat(Map<String, dynamic> data) {
-    final otherUserId = data['senderId']?.toString();
-    final otherUserName = data['senderName']?.toString() ?? 'Contact';
-    if (otherUserId == null || otherUserId.isEmpty) return;
-
-    // The sender is the other party; the recipient is the current user, so
-    // the "isTherapist" flag is the inverse of the current user's role.
-    final isTherapist = AuthService().currentRole != 'therapist';
-
-    void navigate() {
-      final nav = navigatorKey?.currentState;
-      if (nav == null) return;
-      nav.push(MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          otherUserId: otherUserId,
-          otherUserName: otherUserName,
-          isTherapist: isTherapist,
-        ),
-      ));
-    }
-
-    // The first frame may not exist yet when the app was launched from a
-    // notification tap; defer until it does.
-    WidgetsBinding.instance.addPostFrameCallback((_) => navigate());
-  }
-
-  /// Show custom notification via local notifications
-  Future<void> _showCustomNotification(String title, String body) async {
-    // Fallback to local notifications
-    print('Showing local notification: $title - $body');
-  }
-}
-
-/// Background message handler (must be a top-level function)
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('Handling a background message: ${message.messageId}');
-  // Handle background message
-  if (message.notification != null) {
-    print('Message notification: ${message.notification}');
   }
 }

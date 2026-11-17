@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +7,9 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
+import '../../services/backend_api_service.dart';
+import '../../services/patient_crisis_reporter.dart';
+import '../auth/join_therapist_dialog.dart';
 import '../../services/ml_anomaly_service.dart';
 import '../../services/ml_risk_service.dart';
 import '../../services/ml_sentiment_service.dart';
@@ -44,7 +48,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
   bool _isSaving = false;
 
   String _patientName = 'Friend';
-  String _therapistId = '';
+  /// Authoritative `users/{uid}.therapistId`; null = not linked.
+  String? _therapistId;
+  bool _therapistLoaded = false;
 
   _ChoiceOption? _selectedMood;
   _ChoiceOption? _selectedSleep;
@@ -59,7 +65,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
 
   String _allyDynamicMessage = 'I am here with you. 💙';
 
-  double _latestRiskScore = 50.0;
+  double? _latestRiskScore;
   int _streakDays = 0;
 
   static const List<_ChoiceOption> _moodOptions = <_ChoiceOption>[
@@ -73,6 +79,8 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
   static const List<_ChoiceOption> _sleepOptions = <_ChoiceOption>[
     _ChoiceOption(id: 'great', emoji: '😴', title: 'Great (7-9 hours)', score: 1),
     _ChoiceOption(id: 'okay', emoji: '🙂', title: 'Okay (5-7 hours)', score: 2),
+    // Hypersomnia is a depressive symptom (PHQ-9 item 3); same risk as 'poor'.
+    _ChoiceOption(id: 'too_much', emoji: '🛌', title: 'Too much (10+ hours)', score: 3),
     _ChoiceOption(id: 'poor', emoji: '😞', title: 'Poor (3-5 hours)', score: 3),
     _ChoiceOption(id: 'barely_slept', emoji: '❌', title: 'Barely slept (<3 hours)', score: 4),
   ];
@@ -134,23 +142,52 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     super.dispose();
   }
 
-  Future<void> _loadTherapistId() async {
-    final userId = _authService.currentUserId;
-    if (userId == null) {
-      return;
-    }
-
-    try {
-      final doc = await _firestore.collection('users').doc(userId).get();
-      final data = doc.data() ?? <String, dynamic>{};
-      final therapistId = (data['therapistId'] ?? data['assignedTherapist'] ?? '').toString();
-      if (!mounted) return;
+  /// Loads the server-owned therapistId (never a name, never '').
+  Future<String?> _loadTherapistId() async {
+    final therapistId = await _authService.loadTherapistId();
+    if (mounted) {
       setState(() {
         _therapistId = therapistId;
+        _therapistLoaded = true;
       });
-    } catch (e) {
-      debugPrint('Failed to load therapist id: $e');
     }
+    return therapistId;
+  }
+
+  Future<void> _linkTherapist() async {
+    final name = await showJoinTherapistDialog(context, isChange: false);
+    if (name == null || !mounted) return;
+    await _loadTherapistId();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('You are now linked to $name.')),
+    );
+  }
+
+  Widget _buildNotLinkedBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.warningAmber.withValues(alpha: 0.15),
+        border: Border.all(color: AppTheme.warningAmber),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.link_off, color: AppTheme.warningAmber),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'You are not linked to a therapist. Your check-ins are saved, but no clinician '
+              'will see them or be alerted.',
+              style: TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+          TextButton(onPressed: _linkTherapist, child: const Text('Link')),
+        ],
+      ),
+    );
   }
 
   bool _canProceedCurrentStage() {
@@ -316,19 +353,15 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     _allyBounceController.forward(from: 0);
   }
 
-  double _riskScoreFromInputs() {
-    final moodScore = (_selectedMood?.score ?? 1).toDouble();
-    final sleepScore = (_selectedSleep?.score ?? 1).toDouble();
-    final energyScore = (_selectedEnergy?.score ?? 1).toDouble();
+  /// Shared, tested scoring (MlRiskService). Null when any answer is
+  /// missing - a missing answer is NEVER treated as "great".
+  double? _riskScoreFromInputs() => MlRiskService.checkInRiskScore(
+        moodId: _selectedMood?.id,
+        sleepId: _selectedSleep?.id,
+        energyId: _selectedEnergy?.id,
+      );
 
-    final riskScore = (((moodScore - 1) / 4) * 40) +
-        (((sleepScore - 1) / 3) * 30) +
-        (((energyScore - 1) / 3) * 30);
-
-    return riskScore.clamp(0.0, 100.0);
-  }
-
-  double _wellbeingScore() => (100 - _riskScoreFromInputs()).clamp(0.0, 100.0);
+  static String _formatRisk(double? v) => v == null ? '—' : v.toStringAsFixed(0);
 
   String _riskLevelFromScore(double score) {
     if (score <= 24) return 'low';
@@ -337,32 +370,167 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     return 'critical';
   }
 
-  bool _needsCrisisCheck() {
-    final isSadMood = _selectedMood?.id == 'sad';
-    final isDrained = _selectedEnergy?.id == 'drained';
-    final manyWorries = _selectedWorries.length >= 2;
-    return isSadMood && isDrained && manyWorries;
+  bool _needsCrisisCheck() => MlRiskService.checkInNeedsSafetyPrompt(
+        moodId: _selectedMood?.id,
+        sleepId: _selectedSleep?.id,
+        energyId: _selectedEnergy?.id,
+        worriesCount: _selectedWorries.length,
+        riskScore: _riskScoreFromInputs(),
+      );
+
+  static const Map<String, int> _severityRank = {
+    'low': 0,
+    'review': 1,
+    'moderate': 2,
+    'high': 3,
+    'critical': 4,
+  };
+
+  /// Crisis-language check of the patient's free text (optional note +
+  /// thought dump). Local shared lexicon always runs (works offline); the
+  /// backend model is consulted when reachable and the higher severity wins.
+  Future<Map<String, dynamic>?> _evaluateFreeTextCrisis(String patientId) async {
+    final text = <String>[
+      _optionalGoodThingController.text.trim(),
+      (_thoughtDump ?? '').trim(),
+    ].where((t) => t.isNotEmpty).join('\n');
+    if (text.isEmpty) return null;
+
+    final local = MlSentimentService.evaluateCrisisText(text);
+    var severity = local.escalate ? local.severity : 'low';
+    var triggerLayer = local.triggerLayer;
+    var matched = local.matchedPhrases;
+    var modelUsed = false;
+    try {
+      final remote = await BackendApiService()
+          .predictCrisis(text: text, patientId: patientId)
+          .timeout(const Duration(seconds: 5));
+      if (remote != null && remote['available'] == true) {
+        final d = (remote['decision'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
+        modelUsed = true;
+        final rSev = d['escalate'] == true ? (d['severity'] ?? 'low').toString() : 'low';
+        if ((_severityRank[rSev] ?? 0) > (_severityRank[severity] ?? 0)) {
+          severity = rSev;
+          triggerLayer = (d['trigger_layer'] ?? 'model').toString();
+          matched = List<String>.from(d['matched_phrases'] ?? const []);
+        }
+      }
+    } catch (e) {
+      debugPrint('Backend crisis check unavailable, using local lexicon: $e');
+    }
+    return {
+      'severity': severity,
+      'triggerLayer': triggerLayer,
+      'matchedPhrases': matched,
+      'modelUsed': modelUsed,
+      'lexiconVersion': kCrisisLexiconVersion,
+    };
+  }
+
+  /// Escalated free-text crisis (moderate/high/critical) -> crisis_events
+  /// (`checkin_crisis`; moderate maps to contract severity 'medium').
+  /// high/critical also open SafetyResourcesScreen; medium shows a gentle
+  /// support card. 'review'/'low' are stored on the log only (no alert).
+  Future<bool> _escalateFreeTextCrisis(Map<String, dynamic>? crisis) async {
+    if (crisis == null || !mounted) return false;
+    final contractSeverity = switch (crisis['severity'] as String? ?? 'low') {
+      'critical' => 'critical',
+      'high' => 'high',
+      'moderate' => 'medium',
+      _ => null,
+    };
+    if (contractSeverity == null) return false;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final report = PatientCrisisReporter.report(
+      eventType: 'checkin_crisis',
+      severity: contractSeverity,
+      title: 'Check-in note: crisis language detected',
+      message: "The patient's check-in note / thought dump contains crisis language "
+          '(${crisis['triggerLayer']}).',
+      source: 'daily_checkin_text',
+      details: {
+        'triggerLayer': crisis['triggerLayer'],
+        'matchedPhrases': crisis['matchedPhrases'],
+        'modelUsed': crisis['modelUsed'],
+      },
+    );
+    unawaited(report.then((status) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(PatientCrisisReporter.describe(status)),
+        duration: const Duration(seconds: 8),
+        backgroundColor:
+            status == CrisisReportStatus.delivered ? AppTheme.safeGreen : AppTheme.riskRed,
+      ));
+    }));
+
+    if (!mounted) return true;
+    if (contractSeverity == 'medium') {
+      await _showSupportCard();
+    } else {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+      );
+    }
+    return true;
+  }
+
+  Future<void> _showSupportCard() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppTheme.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('You do not have to carry this alone 💙'),
+        content: const Text(
+          'Some of what you wrote sounds really heavy, and we have flagged it for your care team. '
+          'If things feel unsafe at any point, support is available right now.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Thanks'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+              );
+            },
+            child: const Text('Safety resources'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveCrisisEventAndOpenResources() async {
-    final userId = _authService.currentUserId;
-    if (userId == null) return;
-
-    try {
-      await _firestore.collection('crisis_events').add({
-        'patientId': userId,
-        'therapistId': _therapistId,
-        'eventType': 'self_reported_help_needed',
+    final messenger = ScaffoldMessenger.of(context);
+    final reportFuture = PatientCrisisReporter.report(
+      eventType: 'checkin_crisis',
+      severity: 'critical',
+      title: 'Check-in: patient reports needing help',
+      message: 'During the daily check-in the patient answered "I need help" when asked about '
+          'thoughts of self-harm (mood: ${_selectedMood?.title ?? '-'}, '
+          'energy: ${_selectedEnergy?.title ?? '-'}, worries: ${_selectedWorries.length}).',
+      source: 'daily_checkin',
+      details: {
         'mood': _selectedMood?.id,
         'energy': _selectedEnergy?.id,
         'worries': _selectedWorries.toList(),
-        'source': 'daily_checkin',
-        'status': 'open',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint('Failed to create crisis alert from check-in: $e');
-    }
+      },
+    );
+    unawaited(reportFuture.then((status) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(PatientCrisisReporter.describe(status)),
+        duration: const Duration(seconds: 8),
+        backgroundColor:
+            status == CrisisReportStatus.delivered ? AppTheme.safeGreen : AppTheme.riskRed,
+      ));
+    }));
 
     if (!mounted) return;
     await Navigator.push(
@@ -373,7 +541,11 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
 
   Future<void> _runCrisisCheckIfNeeded() async {
     if (!_needsCrisisCheck()) return;
+    await _askSafetyQuestion();
+  }
 
+  Future<void> _askSafetyQuestion() async {
+    if (!mounted) return;
     final response = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -457,13 +629,19 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       if (uid == null) return;
 
       try {
-        await _firestore.collection('reminders').add({
+        // Queued locally by Firestore; do not block the UI when offline.
+        final write = _firestore.collection('reminders').doc().set({
           'patientId': uid,
           'type': 'walk',
           'scheduledAt': Timestamp.fromDate(DateTime.now().add(Duration(minutes: selected))),
           'completed': false,
           'createdAt': FieldValue.serverTimestamp(),
         });
+        try {
+          await write.timeout(const Duration(seconds: 5));
+        } on TimeoutException {
+          unawaited(write.catchError((Object e) => debugPrint('Queued reminder failed: $e')));
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Reminder set! 💙')),
@@ -587,8 +765,10 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     final snapshot = await _firestore
         .collection('daily_logs')
         .where('patientId', isEqualTo: patientId)
+        .orderBy('timestamp', descending: true)
         .limit(400)
-        .get();
+        .get()
+        .timeout(const Duration(seconds: 10));
 
     final loggedDates = <DateTime>{};
     for (final doc in snapshot.docs) {
@@ -605,11 +785,6 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       streak += 1;
       cursor = cursor.subtract(const Duration(days: 1));
     }
-
-    await _firestore.collection('users').doc(patientId).set({
-      'streak': streak,
-      'lastStreakUpdate': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
 
     return streak;
   }
@@ -640,8 +815,8 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       _isSaving = true;
     });
 
-    final wellbeingScore = _wellbeingScore();
     final estimatedRiskScore = _riskScoreFromInputs();
+    final crisisText = await _evaluateFreeTextCrisis(patientId);
     final todayGoal = _goalForToday();
 
     final moodTextForNlp = <String>[
@@ -654,13 +829,25 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       _thoughtDump ?? '',
     ].where((part) => part.trim().isNotEmpty).join(' ');
 
-    DocumentReference<Map<String, dynamic>> dailyLogRef;
-    final finalRiskScore = estimatedRiskScore;
+    // therapistId MUST come from the server-owned users doc (awaited), never
+    // a name and never ''. When unlinked we still save (null) and show a banner.
+    final therapistId = await _loadTherapistId();
 
+    // Contract (docs/DATA_MODEL.md): patientId == auth.uid, therapistId,
+    // timestamp (server). Cloud Function onDailyLogCreated reads `riskScore`
+    // (0-100) and raises the automatic high-risk crisis event (>= 75).
+    // moodScore: 1 = Great ... 5 = Frustrated (HIGHER = WORSE);
+    // sleepScore / energyScore: 1 = best ... 4 = worst.
+    final dailyLogRef = _firestore.collection('daily_logs').doc();
+    final double? finalRiskScore =
+        estimatedRiskScore == null ? null : double.parse(estimatedRiskScore.toStringAsFixed(1));
+    final double? wellbeingScore =
+        finalRiskScore == null ? null : double.parse((100 - finalRiskScore).toStringAsFixed(1));
+    var savedOnline = true;
     try {
-      dailyLogRef = await _firestore.collection('daily_logs').add({
+      final write = dailyLogRef.set({
         'patientId': patientId,
-        'therapistId': _therapistId,
+        'therapistId': therapistId,
         'mood': mood.title,
         'moodKey': mood.id,
         'moodScore': mood.score,
@@ -677,8 +864,13 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         'goalLabel': todayGoal.text,
         'goalCompleted': false,
         'timestamp': FieldValue.serverTimestamp(),
+        'clientCreatedAt': Timestamp.now(),
         'wellbeingScore': wellbeingScore,
-        'riskScore': estimatedRiskScore,
+        'riskScore': finalRiskScore,
+        'riskScoreSource': 'checkin_inputs_v2',
+        // Free-text crisis screening result (incl. low-confidence 'review'
+        // flags that deliberately do NOT create crisis_events).
+        if (crisisText != null) 'mlSentiment': {'crisisText': crisisText},
         'summaryText': _summaryMessage(),
         'optionalNote': _optionalGoodThingController.text.trim(),
         'breathingExerciseDone': _breathingExerciseDone,
@@ -686,6 +878,13 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         if (_thoughtDump != null) 'thoughtDump': _thoughtDump,
         if (_thoughtDumpSentiment != null) 'thoughtDumpSentiment': _thoughtDumpSentiment,
       });
+      try {
+        await write.timeout(const Duration(seconds: 8));
+      } on TimeoutException {
+        // Offline: Firestore has queued the write and will sync it.
+        savedOnline = false;
+        unawaited(write.catchError((Object e) => debugPrint('Queued check-in failed: $e')));
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -697,84 +896,90 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       return;
     }
 
-    SentimentResult? sentimentResult;
-    RiskPrediction? riskPrediction;
-    AnomalyResult? anomalyResult;
+    // Patient snapshot for the therapist dashboard (contract fields only, so
+    // a strict rules allow-list cannot reject it).
+    final snapshotWrite = _firestore.collection('users').doc(patientId).set({
+      if (finalRiskScore != null) 'latestRiskScore': finalRiskScore,
+      if (finalRiskScore != null) 'latestRiskState': _riskLevelFromScore(finalRiskScore),
+      if (wellbeingScore != null) 'latestWellbeingScore': wellbeingScore,
+      'latestMoodScore': mood.score,
+      'lastCheckInAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    unawaited(snapshotWrite.catchError((Object e) => debugPrint('Failed to update user snapshot: $e')));
 
-    try {
-      sentimentResult = await _mlSentimentService.analyzeSentiment(moodTextForNlp);
-    } catch (e) {
-      debugPrint('Sentiment analysis failed: $e');
-    }
+    if (savedOnline) {
+      // ML enrichment is advisory (stored under ml* keys) and NEVER changes
+      // the clinical riskScore that the server-side crisis check uses.
+      SentimentResult? sentimentResult;
+      RiskPrediction? riskPrediction;
+      AnomalyResult? anomalyResult;
+      try {
+        sentimentResult = await _mlSentimentService
+            .analyzeSentiment(moodTextForNlp)
+            .timeout(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('Sentiment analysis failed: $e');
+      }
+      try {
+        riskPrediction =
+            await _mlRiskService.predictRisk(patientId).timeout(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('Risk prediction failed: $e');
+      }
+      try {
+        anomalyResult =
+            await _mlAnomalyService.detectAnomaly(patientId).timeout(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('Anomaly detection failed: $e');
+      }
 
-    try {
-      riskPrediction = await _mlRiskService.predictRisk(patientId);
-    } catch (e) {
-      debugPrint('Risk prediction failed: $e');
-    }
-
-    try {
-      anomalyResult = await _mlAnomalyService.detectAnomaly(patientId);
-    } catch (e) {
-      debugPrint('Anomaly detection failed: $e');
-    }
-
-    try {
-      await dailyLogRef.set({
-        if (sentimentResult != null)
-          'mlSentiment': {
-            'sentiment': sentimentResult.sentiment,
-            'emotion': sentimentResult.emotion,
-            'score': sentimentResult.score,
-            'confidence': sentimentResult.confidence,
-            'clinicalFlags': sentimentResult.clinicalFlags,
-            'crisisKeywords': sentimentResult.crisisKeywords,
-          },
-        if (riskPrediction != null)
-          'mlRisk': {
-            'riskScore': riskPrediction.riskScore,
-            'riskLevel': riskPrediction.riskLevel,
-            'trend': riskPrediction.trend,
-            'prediction7Days': riskPrediction.prediction7Days,
-            'keyFactors': riskPrediction.keyFactors,
-            'confidence': riskPrediction.confidence,
-            'source': riskPrediction.source,
-          },
-        if (anomalyResult != null)
-          'mlAnomaly': {
-            'anomalyDetected': anomalyResult.anomalyDetected,
-            'anomalyType': anomalyResult.anomalyType,
-            'severity': anomalyResult.severity,
-            'description': anomalyResult.description,
-            'recommendation': anomalyResult.recommendation,
-            'confidence': anomalyResult.confidence,
-          },
-        'riskScore': finalRiskScore,
-        'wellbeingScore': (100 - finalRiskScore).clamp(0.0, 100.0),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Failed to save daily log with ML data: $e');
+      if (sentimentResult != null || riskPrediction != null || anomalyResult != null) {
+        unawaited(dailyLogRef.set({
+          if (sentimentResult != null)
+            'mlSentiment': {
+              'sentiment': sentimentResult.sentiment,
+              'emotion': sentimentResult.emotion,
+              'score': sentimentResult.score,
+              'confidence': sentimentResult.confidence,
+              'clinicalFlags': sentimentResult.clinicalFlags,
+              'crisisKeywords': sentimentResult.crisisKeywords,
+            },
+          if (riskPrediction != null)
+            'mlRisk': {
+              'riskScore': riskPrediction.riskScore,
+              'riskLevel': riskPrediction.riskLevel,
+              'trend': riskPrediction.trend,
+              'prediction7Days': riskPrediction.prediction7Days,
+              'keyFactors': riskPrediction.keyFactors,
+              'confidence': riskPrediction.confidence,
+              'source': riskPrediction.source,
+            },
+          if (anomalyResult != null)
+            'mlAnomaly': {
+              'anomalyDetected': anomalyResult.anomalyDetected,
+              'anomalyType': anomalyResult.anomalyType,
+              'severity': anomalyResult.severity,
+              'description': anomalyResult.description,
+              'recommendation': anomalyResult.recommendation,
+              'confidence': anomalyResult.confidence,
+            },
+        }, SetOptions(merge: true)).catchError((Object e) => debugPrint('Failed to save ML data: $e')));
+      }
     }
 
     int streak = 0;
-    try {
-      streak = await _calculateAndPersistStreak(patientId);
-    } catch (e) {
-      debugPrint('Failed to calculate streak: $e');
-    }
-
-    try {
-      await _firestore.collection('users').doc(patientId).set({
-        'latestMood': mood.title,
-        'latestRiskScore': finalRiskScore,
-        'latestRiskLevel': _riskLevelFromScore(finalRiskScore),
-        'latestWellbeingScore': (100 - finalRiskScore).clamp(0.0, 100.0),
-        'lastCheckInDate': FieldValue.serverTimestamp(),
-        'lastCheckInAt': FieldValue.serverTimestamp(),
-        'streak': streak,
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Failed to update user summary: $e');
+    if (savedOnline) {
+      try {
+        streak = await _calculateAndPersistStreak(patientId);
+        // Non-contract extras in a separate write so a rules rejection can
+        // never block the snapshot above.
+        unawaited(_firestore.collection('users').doc(patientId).set({
+          'streak': streak,
+          'latestMood': mood.title,
+        }, SetOptions(merge: true)).catchError((Object e) => debugPrint('Streak update failed: $e')));
+      } catch (e) {
+        debugPrint('Failed to calculate streak: $e');
+      }
     }
 
     if (!mounted) return;
@@ -784,6 +989,19 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       _isSaving = false;
       _stage = 9;
     });
+    if (!savedOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('You are offline. Your check-in is saved on this device and will sync automatically.'),
+        duration: Duration(seconds: 6),
+      ));
+    }
+    if (therapistId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Saved. You are not linked to a therapist, so no clinician will see this check-in.'),
+        duration: Duration(seconds: 6),
+      ));
+    }
+    await _escalateFreeTextCrisis(crisisText);
   }
 
   Future<void> _onPrimaryAction() async {
@@ -1331,7 +1549,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            'Risk score ${_riskScoreFromInputs().toStringAsFixed(0)}',
+            'Risk score ${_formatRisk(_riskScoreFromInputs())}',
             style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
           ),
           const SizedBox(height: 26),
@@ -1454,7 +1672,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         ),
         const SizedBox(height: 24),
         Text(
-          'Latest risk ${_latestRiskScore.toStringAsFixed(0)}',
+          'Latest risk ${_formatRisk(_latestRiskScore)}',
           style: TextStyle(color: Colors.white.withValues(alpha: 0.46), fontSize: 12),
         ),
         const SizedBox(height: 24),
@@ -1521,7 +1739,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
               : IconButton(
                   onPressed: () async {
                     final canPop = await _handleBackTap();
-                    if (canPop && mounted) {
+                    if (canPop && context.mounted) {
                       Navigator.of(context).pop();
                     }
                   },
@@ -1550,6 +1768,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
                 children: [
+                  if (_therapistLoaded && _therapistId == null) _buildNotLinkedBanner(),
                   _buildProgressBar(),
                   if (_stage >= 1 && _stage <= 5) const SizedBox(height: 16),
                   _buildCurrentStageBody(),

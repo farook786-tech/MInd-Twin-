@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:uuid/uuid.dart';
@@ -8,6 +8,8 @@ import 'dart:io';
 import 'dart:async';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
 
@@ -81,7 +83,7 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
         );
       }
     } catch (e) {
-      print('Recording error: $e');
+      debugPrint('Recording error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error starting recording: $e')),
@@ -90,40 +92,154 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
   }
 
   Future<void> _stopRecording() async {
+    String? path;
     try {
-      final path = await _recorder.stop();
-      _stopTimer();
-      
-      setState(() => _isRecording = false);
-
-      if (path != null) {
-        final userId = _authService.currentUserId!;
-        await _dbService.insertVoiceJournal(
-          id: const Uuid().v4(),
-          patientId: userId,
-          filePath: path,
-          transcription: 'User recorded voice entry at ${DateTime.now().toString()}',
-          duration: _recordingDuration,
-          date: DateTime.now().toIso8601String(),
-          sentimentScore: 0.5,
-        );
-        
-        _loadJournals();
-        
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Voice journal saved!'),
-            backgroundColor: Color(0xFF22c55e),
-          ),
-        );
-      }
+      path = await _recorder.stop();
     } catch (e) {
+      debugPrint('Recorder stop failed: $e');
+    }
+    _stopTimer();
+    if (mounted) setState(() => _isRecording = false);
+    if (path == null) return;
+
+    final userId = _authService.currentUserId;
+    if (userId == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        const SnackBar(content: Text('Please sign in again to save your journal.')),
+      );
+      return;
+    }
+
+    final duration = _recordingDuration;
+    final localId = const Uuid().v4();
+    // There is no on-device speech-to-text yet, so the patient may add a
+    // short written note; we never invent a transcript.
+    final entry = await _askForNote();
+    final note = entry?.note.trim() ?? '';
+    final share = entry?.share ?? false;
+
+    var savedLocally = false;
+    try {
+      await _dbService.insertVoiceJournal(
+        id: localId,
+        patientId: userId,
+        filePath: path,
+        transcription: note,
+        duration: duration,
+        date: DateTime.now().toIso8601String(),
+        sentimentScore: 0.0,
+      );
+      savedLocally = true;
+    } catch (e) {
+      debugPrint('Local voice journal save failed: $e');
+    }
+
+    String? cloudStatus;
+    if (share) {
+      cloudStatus = await _saveToFirestore(
+        patientId: userId,
+        localId: localId,
+        note: note,
+        durationSeconds: duration,
       );
     }
+
+    await _loadJournals();
+    if (!mounted) return;
+    final parts = <String>[
+      savedLocally ? 'Voice journal saved on this device.' : 'Could not save the recording on this device.',
+      if (cloudStatus != null) cloudStatus,
+    ];
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(parts.join(' ')),
+        backgroundColor: savedLocally ? const Color(0xFF22c55e) : AppTheme.riskRed,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  /// Writes journal metadata + note to `journal_entries` so the therapist
+  /// sees it in real time. Audio stays on the device (upload is a separate,
+  /// not-yet-implemented feature). Returns a user-facing status string.
+  Future<String> _saveToFirestore({
+    required String patientId,
+    required String localId,
+    required String note,
+    required int durationSeconds,
+  }) async {
+    final therapistId = await _authService.loadTherapistId();
+    final ref = FirebaseFirestore.instance.collection('journal_entries').doc(localId);
+    final write = ref.set({
+      'patientId': patientId,
+      'therapistId': therapistId,
+      'source': 'voice_journal',
+      'text': note,
+      'transcript': null, // no speech-to-text yet
+      'durationSeconds': durationSeconds,
+      'hasAudio': true,
+      'audioUploaded': false,
+      'createdAt': FieldValue.serverTimestamp(),
+      'clientCreatedAt': Timestamp.now(),
+    });
+    try {
+      await write.timeout(const Duration(seconds: 8));
+      return therapistId == null
+          ? 'You are not linked to a therapist, so nobody else can see it.'
+          : 'Shared with your therapist.';
+    } on TimeoutException {
+      unawaited(write.catchError((Object e) => debugPrint('Queued journal sync failed: $e')));
+      return 'It will be shared with your therapist when you are back online.';
+    } catch (e) {
+      debugPrint('journal_entries write failed: $e');
+      return 'It could not be shared with your therapist.';
+    }
+  }
+
+  Future<_JournalNote?> _askForNote() async {
+    if (!mounted) return null;
+    final controller = TextEditingController();
+    var share = true;
+    final result = await showDialog<_JournalNote>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: AppTheme.cardDark,
+          title: const Text('Add a note (optional)'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                maxLines: 4,
+                maxLength: 2000,
+                decoration: const InputDecoration(
+                  hintText: 'What was this recording about?',
+                ),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: share,
+                onChanged: (v) => setDialogState(() => share = v ?? false),
+                title: const Text('Share the note with my therapist'),
+                subtitle: const Text('The audio itself stays on this phone.'),
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(_JournalNote(controller.text, share)),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    // Controller is not disposed here: the dialog's exit animation may still
+    // reference it; it is garbage-collected with the closure.
+    return result;
   }
 
   Future<void> _loadJournals() async {
@@ -136,7 +252,7 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
         setState(() => _journals = journals);
       }
     } catch (e) {
-      print('Error loading journals: $e');
+      debugPrint('Error loading journals: $e');
     }
   }
 
@@ -381,3 +497,9 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
   }
 }
 
+
+class _JournalNote {
+  final String note;
+  final bool share;
+  const _JournalNote(this.note, this.share);
+}

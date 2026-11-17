@@ -5,46 +5,49 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.MeasureCallback
 import androidx.health.services.client.data.Availability
 import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.DeltaDataType
-import com.google.android.gms.wearable.PutDataMapRequest
-import com.google.android.gms.wearable.Wearable
-import java.time.Instant
 import java.util.concurrent.Executors
 
+/**
+ * Foreground service keeping an active heart-rate measurement running so readings continue
+ * while the watch screen is off. Readings are forwarded (max one per minute, real sample and
+ * real timestamp) by [PhoneSync].
+ */
 class HeartRateService : Service() {
 
     private val executor = Executors.newSingleThreadExecutor()
-    private var registered = false
+    @Volatile private var registered = false
 
     private val measureCallback = object : MeasureCallback {
-        override fun onDataReceived(dataPoints: DataPointContainer) {
-            val hrPoints = dataPoints.getData(DataType.HEART_RATE_BPM)
+        override fun onDataReceived(data: DataPointContainer) {
+            val hrPoints = data.getData(DataType.HEART_RATE_BPM)
             if (hrPoints.isNotEmpty()) {
-                val bpm = hrPoints.last().value.toInt()
-                Log.d("MindTwinWear", "Active measurement received: $bpm BPM")
-                syncHeartRateToPhone(bpm)
+                PhoneSync.sendHeartRatePoints(this@HeartRateService, hrPoints, origin = "active")
             }
         }
 
         override fun onRegistered() {
             registered = true
-            Log.d("MindTwinWear", "Measure callback registered.")
+            Log.d(TAG, "Measure callback registered.")
         }
 
-        override fun onRegistrationFailed(t: Throwable) {
-            Log.e("MindTwinWear", "Measure callback registration failed: ", t)
+        override fun onRegistrationFailed(throwable: Throwable) {
+            registered = false
+            Log.e(TAG, "Measure callback registration failed", throwable)
         }
 
         override fun onAvailabilityChanged(dataType: DeltaDataType<*, *>, availability: Availability) {
-            Log.d("MindTwinWear", "Measure availability changed: $dataType -> $availability")
+            Log.d(TAG, "Measure availability changed: $dataType -> $availability")
         }
     }
 
@@ -56,41 +59,42 @@ class HeartRateService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification())
+        if (!Monitoring.hasSensorPermission(this)) {
+            Log.w(TAG, "Sensor permission missing; stopping HeartRateService")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        try {
+            // API 34+ requires the FGS type at start; ServiceCompat ignores it on older versions.
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground failed", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         registerMeasure()
         return START_STICKY
     }
 
     private fun registerMeasure() {
         if (registered) return
-        val client = HealthServices.getClient(this).measureClient
         try {
-            client.registerMeasureCallback(DataType.HEART_RATE_BPM, executor, measureCallback)
+            HealthServices.getClient(this).measureClient
+                .registerMeasureCallback(DataType.HEART_RATE_BPM, executor, measureCallback)
         } catch (e: Exception) {
-            Log.e("MindTwinWear", "Failed to register measure callback: ", e)
+            Log.e(TAG, "Failed to register measure callback", e)
         }
-    }
-
-    private fun syncHeartRateToPhone(bpm: Int) {
-        val dataClient = Wearable.getDataClient(this)
-        val putDataMapRequest = PutDataMapRequest.create("/wearable/heart_rate").apply {
-            dataMap.putInt("bpm", bpm)
-            dataMap.putLong("timestamp", Instant.now().toEpochMilli())
-            setUrgent()
-        }
-        dataClient.putDataItem(putDataMapRequest.asPutDataRequest())
-            .addOnSuccessListener {
-                Log.d("MindTwinWear", "Successfully synced $bpm BPM to phone")
-            }
-            .addOnFailureListener { e ->
-                Log.e("MindTwinWear", "Failed to sync BPM to phone: ", e)
-            }
     }
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Heart Rate Monitoring",
+            "Heart rate monitoring",
             NotificationManager.IMPORTANCE_LOW
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -102,20 +106,23 @@ class HeartRateService : Service() {
             .setContentText("Monitoring heart rate")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
 
     override fun onDestroy() {
-        super.onDestroy()
         try {
-            val client = HealthServices.getClient(this).measureClient
-            client.unregisterMeasureCallbackAsync(DataType.HEART_RATE_BPM, measureCallback)
+            HealthServices.getClient(this).measureClient
+                .unregisterMeasureCallbackAsync(DataType.HEART_RATE_BPM, measureCallback)
         } catch (e: Exception) {
-            Log.e("MindTwinWear", "Failed to unregister measure callback: ", e)
+            Log.e(TAG, "Failed to unregister measure callback", e)
         }
+        registered = false
         executor.shutdown()
+        super.onDestroy()
     }
 
     companion object {
+        private const val TAG = "MindTwinWear"
         private const val CHANNEL_ID = "heart_rate_monitoring"
         private const val NOTIFICATION_ID = 42
     }

@@ -28,7 +28,7 @@ class _EngagementReminderStatsScreenState
 
   Future<void> _initialize() async {
     try {
-      _therapistId = _authService.currentUserId ?? 'therapist_main';
+      _therapistId = _authService.currentUserId; // FirebaseAuth uid; null = signed out
       if (_therapistId != null) {
         await _loadStats();
       }

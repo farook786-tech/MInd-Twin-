@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -8,6 +9,10 @@ import '../../core/theme/app_theme.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/auth_service.dart';
 
+/// DEVELOPER TOOL. Only reachable when kDebugMode (see
+/// TherapistDashboardScreen / DashboardTab). It never writes to a patient's
+/// clinical collections; the only write is an `interventions` doc flagged
+/// isSimulated, and that is disabled outside debug builds.
 class SimulatorTab extends StatefulWidget {
   const SimulatorTab({super.key});
 
@@ -91,10 +96,11 @@ class _SimulatorTabState extends State<SimulatorTab> {
         _apiRecommendations = const [];
       });
     } finally {
-      if (!mounted) return;
+      if (mounted) {
       setState(() {
         _recommendationsLoading = false;
       });
+      }
     }
   }
 
@@ -140,10 +146,11 @@ class _SimulatorTabState extends State<SimulatorTab> {
         _geminiExplanation = 'AI explanation is unavailable for $patientName right now.';
       });
     } finally {
-      if (!mounted) return;
+      if (mounted) {
       setState(() {
         _explanationLoading = false;
       });
+      }
     }
   }
 
@@ -202,6 +209,8 @@ class _SimulatorTabState extends State<SimulatorTab> {
             stream: FirebaseFirestore.instance
                 .collection('daily_logs')
                 .where('patientId', isEqualTo: selected.id)
+                .where('therapistId', isEqualTo: therapistId)
+                .orderBy('timestamp', descending: true)
                 .limit(20)
                 .snapshots(),
             builder: (context, logSnapshot) {
@@ -209,6 +218,8 @@ class _SimulatorTabState extends State<SimulatorTab> {
                 stream: FirebaseFirestore.instance
                     .collection('clinical_assessments')
                     .where('patientId', isEqualTo: selected.id)
+                    .where('therapistId', isEqualTo: therapistId)
+                    .orderBy('timestamp', descending: true)
                     .limit(10)
                     .snapshots(),
                 builder: (context, assessmentSnapshot) {
@@ -496,7 +507,7 @@ class _SimulatorTabState extends State<SimulatorTab> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _selectedIntervention == null
+                            onPressed: _selectedIntervention == null || !kDebugMode
                                 ? null
                                 : () async {
                                     final intervention = _selectedIntervention!;
@@ -680,14 +691,14 @@ List<_PatientState> _dedupePatients(List<QueryDocumentSnapshot<Map<String, dynam
 }
 
 double _riskPercent(Map<String, dynamic> data) {
-  final raw = _toDouble(data['latestRiskScore'] ?? data['riskScore'] ?? data['risk']);
+  // Contract: latestRiskScore is 0-100. Unscored patients simulate from 0.
+  final raw = _toDouble(data['latestRiskScore']);
   if (raw == null) return 0;
-  if (raw <= 1) return (raw * 100).clamp(0.0, 100.0);
   return raw.clamp(0.0, 100.0);
 }
 
 DateTime _timestamp(Map<String, dynamic> data) {
-  final values = [data['timestamp'], data['lastCheckInDate'], data['updatedAt'], data['createdAt']];
+  final values = [data['timestamp'], data['lastCheckInAt'], data['lastCheckInDate'], data['updatedAt'], data['createdAt']];
   for (final value in values) {
     final date = _dateOf(value);
     if (date != null) return date;

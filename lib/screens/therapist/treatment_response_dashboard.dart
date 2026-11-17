@@ -1,8 +1,14 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
-import '../../services/backend_api_service.dart';
-import '../../services/database_service.dart';
+import '../../services/auth_service.dart';
 
+/// PHQ-9 treatment response per patient, computed directly from Firestore
+/// `clinical_assessments` (the therapist's local SQLite / backend summary
+/// were not the source of truth and were empty on a fresh install).
+///
+/// Response = (baseline - current) / baseline (clinical convention:
+/// >= 50% reduction is a response; PHQ-9 < 5 is remission).
 class TreatmentResponseDashboard extends StatefulWidget {
   const TreatmentResponseDashboard({super.key});
 
@@ -12,12 +18,12 @@ class TreatmentResponseDashboard extends StatefulWidget {
 }
 
 class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard> {
-  final BackendApiService _backendApiService = BackendApiService();
-  final DatabaseService _dbService = DatabaseService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   List<Map<String, dynamic>> _patients = [];
   Map<String, Map<String, dynamic>> _treatmentData = {};
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -26,29 +32,114 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
   }
 
   Future<void> _loadPatientData() async {
-    setState(() => _loading = true);
+    final therapistId = AuthService().currentUserId;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    if (therapistId == null) {
+      setState(() {
+        _loading = false;
+        _error = 'Please sign in as therapist.';
+      });
+      return;
+    }
     try {
-      final patients = await _dbService.getAllPatients();
-      final treatmentMap = <String, Map<String, dynamic>>{};
+      final roster = await _firestore
+          .collection('users')
+          .where('therapistId', isEqualTo: therapistId)
+          .where('role', isEqualTo: 'patient')
+          .get();
 
-      for (final patient in patients) {
-        final summary = await _backendApiService.getTreatmentSummary(patient.id);
-        treatmentMap[patient.id] = summary;
+      final patients = roster.docs
+          .map((doc) => <String, dynamic>{
+                'id': doc.id,
+                'name': (doc.data()['name'] ?? 'Unnamed Patient').toString(),
+                'email': (doc.data()['email'] ?? '').toString(),
+              })
+          .toList()
+        ..sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
+
+      final summaries = await Future.wait(
+        patients.map((p) => _summaryFor(p['id'] as String, therapistId)),
+      );
+      final treatmentMap = <String, Map<String, dynamic>>{};
+      for (var i = 0; i < patients.length; i++) {
+        treatmentMap[patients[i]['id'] as String] = summaries[i];
       }
 
       if (!mounted) return;
       setState(() {
-        _patients = patients
-            .map((p) => {'id': p.id, 'name': p.name, 'email': p.email})
-            .cast<Map<String, dynamic>>()
-            .toList();
+        _patients = patients;
         _treatmentData = treatmentMap;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _error = error is FirebaseException && error.code == 'permission-denied'
+            ? 'Permission denied. Confirm your therapist account is approved, then sign out and back in.'
+            : 'Could not load treatment data: $error';
+      });
     }
+  }
+
+  /// Baseline = first PHQ-9, current = latest PHQ-9 for this patient.
+  Future<Map<String, dynamic>> _summaryFor(String patientId, String therapistId) async {
+    final base = _firestore
+        .collection('clinical_assessments')
+        .where('patientId', isEqualTo: patientId)
+        .where('therapistId', isEqualTo: therapistId);
+    final first = await base.orderBy('timestamp').limit(1).get();
+    final last = await base.orderBy('timestamp', descending: true).limit(1).get();
+    if (first.docs.isEmpty || last.docs.isEmpty) return {};
+
+    final baselineScore = _phqTotal(first.docs.first.data());
+    final currentScore = _phqTotal(last.docs.first.data());
+    if (baselineScore == null || currentScore == null) return {};
+
+    final baselineAt = _toDate(first.docs.first.data()['timestamp']);
+    final currentAt = _toDate(last.docs.first.data()['timestamp']);
+    final weeks = (baselineAt != null && currentAt != null)
+        ? currentAt.difference(baselineAt).inDays ~/ 7
+        : 0;
+
+    final responsePct = baselineScore > 0
+        ? (((baselineScore - currentScore) / baselineScore) * 100).round().clamp(0, 100)
+        : 0;
+    final String status;
+    if (first.docs.first.id == last.docs.first.id) {
+      status = 'baseline_only';
+    } else if (currentScore < 5) {
+      status = 'remission';
+    } else if (responsePct >= 50) {
+      status = 'significant_progress';
+    } else {
+      status = 'in_treatment';
+    }
+
+    return {
+      'baseline': {'score': baselineScore},
+      'current': {'score': currentScore},
+      'treatmentResponse': {
+        'responsePercentage': responsePct,
+        'remissionStatus': status,
+        'weeksSinceBaseline': weeks,
+      },
+    };
+  }
+
+  int? _phqTotal(Map<String, dynamic> data) {
+    final raw = data['totalScore'] ?? data['phq9Score'];
+    if (raw is num) return raw.round();
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  DateTime? _toDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 
   @override
@@ -84,6 +175,17 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.riskRed),
+                    ),
+                  ),
+                )
           : RefreshIndicator(
               onRefresh: _loadPatientData,
               child: ListView(

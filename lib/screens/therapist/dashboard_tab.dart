@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -50,21 +53,14 @@ class DashboardTab extends StatelessWidget {
                   stream: FirebaseFirestore.instance
                       .collection('daily_logs')
                       .where('therapistId', isEqualTo: therapistId)
+                      .orderBy('timestamp', descending: true)
                       .limit(300)
                       .snapshots(),
                   builder: (context, logsSnapshot) {
-                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      stream: FirebaseFirestore.instance
-                          .collection('daily_logs')
-                          .where('therapistId', isEqualTo: therapistId)
-                          .limit(30)
-                          .snapshots(),
-                      builder: (context, moodTrendSnapshot) {
                         final isLoading = therapistSnapshot.connectionState == ConnectionState.waiting ||
                             patientsSnapshot.connectionState == ConnectionState.waiting ||
                             crisisSnapshot.connectionState == ConnectionState.waiting ||
-                            logsSnapshot.connectionState == ConnectionState.waiting ||
-                            moodTrendSnapshot.connectionState == ConnectionState.waiting;
+                            logsSnapshot.connectionState == ConnectionState.waiting;
 
                         if (isLoading) {
                           return _DashboardShell(
@@ -80,21 +76,26 @@ class DashboardTab extends StatelessWidget {
                         final patientDocs = patientsSnapshot.data?.docs ?? const [];
                         final crisisDocs = crisisSnapshot.data?.docs ?? const [];
                         final logDocs = logsSnapshot.data?.docs ?? const [];
-                        final moodDocs = moodTrendSnapshot.data?.docs ?? const [];
+                        final moodCutoff = DateTime.now().subtract(const Duration(days: 30));
 
                         final hasAnyData = patientDocs.isNotEmpty || crisisDocs.isNotEmpty || logDocs.isNotEmpty;
                         final hasStreamError = therapistSnapshot.hasError ||
                             patientsSnapshot.hasError ||
                             crisisSnapshot.hasError ||
-                            logsSnapshot.hasError ||
-                            moodTrendSnapshot.hasError;
+                            logsSnapshot.hasError;
+                        final streamErrorText = _streamErrorText([
+                          therapistSnapshot.error,
+                          patientsSnapshot.error,
+                          crisisSnapshot.error,
+                          logsSnapshot.error,
+                        ]);
 
                         if (hasStreamError && !hasAnyData) {
                           return _DashboardShell(
                             child: _CenteredStateCard(
                               icon: Icons.error_outline_rounded,
                               title: 'Unable To Load Dashboard',
-                              subtitle: 'No data is available right now. Please retry in a moment.',
+                              subtitle: streamErrorText,
                               tint: AppTheme.riskRed,
                             ),
                           );
@@ -102,14 +103,15 @@ class DashboardTab extends StatelessWidget {
 
                         final patients = _dedupePatients(patientDocs);
                         final logsByPatient = _groupLogsByPatient(logDocs);
-                        final sortedMoodLogs = moodDocs
+                        // Logs are already ordered newest-first by the query.
+                        final sortedMoodLogs = logDocs
                             .map((doc) => doc.data())
-                            .toList()
-                          ..sort((a, b) => _readTimestamp(b).compareTo(_readTimestamp(a)));
+                            .where((log) => _readTimestamp(log).isAfter(moodCutoff))
+                            .toList();
 
                         final totalPatients = patients.length;
-                        final highRiskToday = patients.where((p) => _readRiskPercent(p.data) >= 50).length;
-                        final checkedInToday = patients.where((p) => _isToday(_readDate(p.data['lastCheckInDate']))).length;
+                        final highRiskToday = patients.where((p) => (_readRiskPercent(p.data) ?? -1) >= 50).length;
+                        final checkedInToday = patients.where((p) => _isToday(_lastCheckIn(p.data))).length;
                         final crisisAlerts = crisisDocs.length;
 
                         final riskBuckets = _riskBucketCounts(patients);
@@ -123,6 +125,12 @@ class DashboardTab extends StatelessWidget {
                               children: [
                                 _DashboardHeader(therapistName: therapistName),
                                 const SizedBox(height: 14),
+                                const TherapistInviteCodeCard(),
+                                const SizedBox(height: 14),
+                                if (hasStreamError) ...[
+                                  _PartialErrorBanner(message: streamErrorText),
+                                  const SizedBox(height: 12),
+                                ],
                                 if (crisisAlerts > 0)
                                   _CrisisAlertBanner(
                                     alertCount: crisisAlerts,
@@ -181,7 +189,7 @@ class DashboardTab extends StatelessWidget {
                                             final patientName = _safeString(patient.data['name'], fallback: 'Unnamed Patient');
                                             final risk = _readRiskPercent(patient.data);
                                             final moodLabel = _safeString(patient.data['latestMood'], fallback: 'Unknown');
-                                            final lastCheckin = _relativeTime(_readDate(patient.data['lastCheckInDate']));
+                                            final lastCheckin = _relativeTime(_lastCheckIn(patient.data));
                                             final logs = logsByPatient[patientId] ?? const <Map<String, dynamic>>[];
                                             final trend = _riskTrend(logs);
 
@@ -202,7 +210,7 @@ class DashboardTab extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 16),
                                 _SectionCard(
-                                  title: 'Emotion Trend (Last 30 Days)',
+                                  title: 'Mood Trend - all patients (last 30 days, 10 = best)',
                                   child: _MoodLineChart(points: moodSeries),
                                 ),
                                 const SizedBox(height: 16),
@@ -223,12 +231,15 @@ class DashboardTab extends StatelessWidget {
                                         ),
                                       );
                                     },
-                                    onSimulator: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(builder: (_) => const SimulatorTab()),
-                                      );
-                                    },
+                                    // Developer tool: never reachable in release builds.
+                                    onSimulator: kDebugMode
+                                        ? () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => const SimulatorTab()),
+                                            );
+                                          }
+                                        : null,
                                     onAppointments: () {
                                       Navigator.push(
                                         context,
@@ -241,8 +252,6 @@ class DashboardTab extends StatelessWidget {
                             ),
                           ),
                         );
-                      },
-                    );
                   },
                 );
               },
@@ -507,7 +516,7 @@ class _SectionCard extends StatelessWidget {
 
 class _RiskRow extends StatelessWidget {
   final String name;
-  final double riskPercent;
+  final double? riskPercent;
   final String emotion;
   final String lastCheckIn;
   final _TrendDirection trend;
@@ -522,7 +531,7 @@ class _RiskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final riskColor = _riskColor(riskPercent);
+    final riskColor = riskPercent == null ? Colors.white54 : _riskColor(riskPercent!);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -559,7 +568,7 @@ class _RiskRow extends StatelessWidget {
                   border: Border.all(color: riskColor.withValues(alpha: 0.5)),
                 ),
                 child: Text(
-                  '${riskPercent.toStringAsFixed(0)}%',
+                  riskPercent == null ? 'No data' : '${riskPercent!.toStringAsFixed(0)}%',
                   style: TextStyle(
                     color: riskColor,
                     fontSize: 12,
@@ -797,13 +806,13 @@ class _MoodLineChart extends StatelessWidget {
 class _QuickActions extends StatelessWidget {
   final VoidCallback onPatients;
   final VoidCallback onAlerts;
-  final VoidCallback onSimulator;
+  final VoidCallback? onSimulator;
   final VoidCallback onAppointments;
 
   const _QuickActions({
     required this.onPatients,
     required this.onAlerts,
-    required this.onSimulator,
+    this.onSimulator,
     required this.onAppointments,
   });
 
@@ -815,7 +824,8 @@ class _QuickActions extends StatelessWidget {
       children: [
         _QuickActionButton(label: '👥 View Patients', onTap: onPatients),
         _QuickActionButton(label: '🔔 Alerts', onTap: onAlerts),
-        _QuickActionButton(label: '🧪 Simulator', onTap: onSimulator),
+        if (onSimulator != null)
+          _QuickActionButton(label: '🧪 Simulator (debug only)', onTap: onSimulator!),
         _QuickActionButton(label: '📅 Appointments', onTap: onAppointments),
       ],
     );
@@ -1005,7 +1015,9 @@ Map<String, int> _riskBucketCounts(List<_PatientLite> patients) {
 
   for (final patient in patients) {
     final risk = _readRiskPercent(patient.data);
-    if (risk < 25) {
+    if (risk == null) {
+      continue; // No score yet: not counted in any risk bucket.
+    } else if (risk < 25) {
       counts['Low'] = (counts['Low'] ?? 0) + 1;
     } else if (risk < 50) {
       counts['Moderate'] = (counts['Moderate'] ?? 0) + 1;
@@ -1027,11 +1039,15 @@ List<FlSpot> _buildMoodSeries(List<Map<String, dynamic>> logs) {
   final grouped = <String, List<double>>{};
 
   for (final log in logs) {
+    // daily_logs.moodScore is the check-in choice on an inverted 1..5 scale
+    // (1 = great .. 5 = frustrated; see DailyCheckinScreen). Plot it as
+    // 0..10 where 10 = best, consistent with every other wellbeing chart.
     final mood = _toDouble(log['moodScore']);
     if (mood == null) continue;
-    final date = _readTimestamp(log);
-    final key = '${date.year}-${date.month}-${date.day}';
-    grouped.putIfAbsent(key, () => <double>[]).add(mood.clamp(0.0, 10.0));
+    final normalized = ((5 - mood.clamp(1.0, 5.0)) / 4) * 10;
+    final date = _readTimestamp(log).toLocal();
+    final key = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    grouped.putIfAbsent(key, () => <double>[]).add(normalized);
   }
 
   final entries = grouped.entries.toList()
@@ -1063,6 +1079,7 @@ _TrendDirection _riskTrend(List<Map<String, dynamic>> logs) {
 
   final latest = _readRiskPercent(logs[0]);
   final previous = _readRiskPercent(logs[1]);
+  if (latest == null || previous == null) return _TrendDirection.flat;
   final delta = latest - previous;
 
   if (delta > 3) return _TrendDirection.up;
@@ -1092,22 +1109,68 @@ Color _trendColor(_TrendDirection trend) {
   }
 }
 
-double _readRiskPercent(Map<String, dynamic> source) {
-  final value = _toDouble(source['latestRiskScore'] ?? source['riskScore'] ?? source['risk']);
-  if (value == null) {
-    final wellbeing = _toDouble(source['wellbeingScore']);
-    if (wellbeing != null) {
-      return (100 - wellbeing).clamp(0.0, 100.0);
-    }
-    return 0;
-  }
-  if (value <= 1) return (value * 100).clamp(0.0, 100.0);
+/// Risk on the contract's 0-100 scale (`users.latestRiskScore` or
+/// `daily_logs.riskScore`). Returns null when there is no score yet; a
+/// missing score is never shown as "low risk".
+double? _readRiskPercent(Map<String, dynamic> source) {
+  final value = _toDouble(source['latestRiskScore'] ?? source['riskScore']);
+  if (value == null || value.isNaN) return null;
   return value.clamp(0.0, 100.0);
+}
+
+DateTime? _lastCheckIn(Map<String, dynamic> data) {
+  return _readDate(data['lastCheckInAt']) ?? _readDate(data['lastCheckInDate']);
+}
+
+String _streamErrorText(List<Object?> errors) {
+  Object? error;
+  for (final e in errors) {
+    if (e != null) {
+      error = e;
+      break;
+    }
+  }
+  if (error is FirebaseException && error.code == 'permission-denied') {
+    return 'Permission denied while loading clinical data. Confirm your therapist account is approved, then sign out and back in.';
+  }
+  if (error is FirebaseException && error.code == 'failed-precondition') {
+    return 'A required database index is missing or still building. Data will appear once it is ready.';
+  }
+  return 'Some clinical data could not be loaded: ${error ?? 'unknown error'}';
+}
+
+class _PartialErrorBanner extends StatelessWidget {
+  final String message;
+
+  const _PartialErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.riskRed.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.riskRed.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: AppTheme.riskRed),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(message, style: const TextStyle(color: Colors.white, fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 DateTime _readTimestamp(Map<String, dynamic> source) {
   final candidates = [
     source['timestamp'],
+    source['lastCheckInAt'],
     source['lastCheckInDate'],
     source['updatedAt'],
     source['createdAt'],
@@ -1163,4 +1226,139 @@ double? _toDouble(dynamic value) {
   if (value is num) return value.toDouble();
   if (value is String) return double.tryParse(value);
   return null;
+}
+
+/// "Your invite code" card. Patients link to a therapist ONLY via this code
+/// (callable `registerPatient` / `joinTherapist`). The code comes from the
+/// callable `getMyInviteCode` (approved therapists only; creates one if
+/// missing). Copy only: share_plus is not a dependency of this app.
+class TherapistInviteCodeCard extends StatefulWidget {
+  const TherapistInviteCodeCard({super.key});
+
+  @override
+  State<TherapistInviteCodeCard> createState() => _TherapistInviteCodeCardState();
+}
+
+class _TherapistInviteCodeCardState extends State<TherapistInviteCodeCard> {
+  String? _code;
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await FirebaseFunctions.instance.httpsCallable('getMyInviteCode').call<dynamic>(<String, dynamic>{});
+      final data = result.data;
+      final code = data is Map ? data['inviteCode']?.toString() : null;
+      if (!mounted) return;
+      setState(() {
+        _code = (code == null || code.trim().isEmpty) ? null : code.trim();
+        _error = _code == null ? 'No invite code was returned. Try again.' : null;
+        _loading = false;
+      });
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = switch (e.code) {
+          'permission-denied' || 'failed-precondition' =>
+            'Your therapist account is not approved yet, so you cannot invite patients.',
+          'unauthenticated' => 'Please sign in again.',
+          'unavailable' || 'deadline-exceeded' => 'Network unavailable. Tap retry.',
+          _ => 'Could not load invite code (${e.code}).',
+        };
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Could not load invite code: $e';
+      });
+    }
+  }
+
+  Future<void> _copy() async {
+    final code = _code;
+    if (code == null) return;
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Invite code copied. Share it with your patient.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.cardDark,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.primaryIndigo.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.qr_code_rounded, color: AppTheme.primaryIndigo, size: 30),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your invite code',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                if (_loading)
+                  const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryIndigo),
+                  )
+                else if (_code != null)
+                  SelectableText(
+                    _code!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2,
+                    ),
+                  )
+                else
+                  Text(_error ?? 'Unavailable', style: const TextStyle(color: AppTheme.warningAmber, fontSize: 12)),
+                const SizedBox(height: 4),
+                Text(
+                  'Patients enter this code when they sign up or change therapist.',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          if (_code != null)
+            IconButton(
+              tooltip: 'Copy invite code',
+              icon: const Icon(Icons.copy_rounded, color: Colors.white),
+              onPressed: _copy,
+            )
+          else if (!_loading)
+            IconButton(
+              tooltip: 'Retry',
+              icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+              onPressed: _load,
+            ),
+        ],
+      ),
+    );
+  }
 }

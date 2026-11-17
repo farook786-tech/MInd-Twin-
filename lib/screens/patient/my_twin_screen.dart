@@ -7,6 +7,7 @@ import '../../core/widgets/app_card.dart';
 import '../../core/widgets/twin_chart.dart';
 import '../../services/auth_service.dart';
 import '../../services/wearable_sync_service.dart';
+import '../../widgets/patient_vitals_panel.dart';
 import 'daily_checkin_screen.dart';
 
 class MyTwinScreen extends StatefulWidget {
@@ -303,7 +304,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
   double _sumScores(List<_TwinPoint> points, double? Function(_TwinPoint point) selector) {
     return points.fold<double>(
       0,
-      (sum, point) => sum + (selector(point) ?? 0),
+      (total, point) => total + (selector(point) ?? 0),
     );
   }
 
@@ -592,134 +593,138 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
     );
   }
 
-  Widget _buildWearableVitalsCard() {
-    final syncService = WearableSyncService();
-    return StreamBuilder<Map<String, dynamic>>(
-      stream: syncService.heartRateStream,
-      initialData: syncService.lastReceivedVitals,
-      builder: (context, snapshot) {
-        final data = snapshot.data;
-        final bpm = data?['bpm'] as int?;
-        final timestamp = data?['timestamp'] as DateTime?;
-        final timeString = timestamp != null
-            ? DateFormat('hh:mm:ss a').format(timestamp)
-            : 'Never';
+  Future<void> _runWatchAction(Future<String?> Function() action, String successMessage) async {
+    final error = await action();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? successMessage),
+        backgroundColor: error == null ? AppTheme.safeGreen : AppTheme.warningAmber,
+        duration: const Duration(seconds: 6),
+      ),
+    );
+  }
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTheme.cardDark,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.25), width: 1.5),
-            gradient: LinearGradient(
-              colors: [
-                AppTheme.cardDark,
-                Colors.pinkAccent.withValues(alpha: 0.05),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildWearableVitalsCard() {
+    final patientId = _patientId;
+    if (patientId == null) return const SizedBox.shrink();
+    final syncService = WearableSyncService();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Real watch connection state (Wear OS Data Layer capability), never assumed.
+        ValueListenableBuilder<WatchStatus?>(
+          valueListenable: syncService.watchStatus,
+          builder: (context, status, _) {
+            final connected = status?.connected == true;
+            final label = status == null
+                ? 'Watch status unknown'
+                : connected
+                    ? 'Watch connected${status.nodeNames.isNotEmpty ? ' · ${status.nodeNames.first}' : ''}'
+                    : status.pairedNodeConnected
+                        ? 'Watch reachable, MindTwin watch app not installed'
+                        : 'Watch not connected';
+            final color = connected ? AppTheme.safeGreen : AppTheme.warningAmber;
+            // "Link your watch" guidance: the watch component is part of this app.
+            final String? hint;
+            final Widget? action;
+            if (status == null) {
+              hint = null;
+              action = null;
+            } else if (connected) {
+              hint = 'Heart rate is shared with your therapist automatically. '
+                  'If no readings appear, open MindTwin on the watch and allow heart-rate access.';
+              action = TextButton.icon(
+                onPressed: () => _runWatchAction(syncService.openOnWatch,
+                    'MindTwin opened on your watch. Allow heart-rate access there ("Allow all the time").'),
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Open on watch'),
+              );
+            } else if (status.pairedNodeConnected) {
+              hint = 'Your watch is paired. Install MindTwin on it to share heart rate with your therapist.';
+              action = TextButton.icon(
+                onPressed: () => _runWatchAction(syncService.installOnWatch,
+                    'Check your watch: tap Install, then open MindTwin and allow heart-rate access.'),
+                icon: const Icon(Icons.install_mobile, size: 16),
+                label: const Text('Install on watch'),
+              );
+            } else {
+              hint = 'Pair your Wear OS / Galaxy Watch with your phone (Galaxy Wearable app), keep it '
+                  'nearby, then tap refresh. Any watch that syncs to Health Connect (e.g. via '
+                  'Samsung Health or Fitbit) also works: allow Health Connect below.';
+              action = null;
+            }
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.watch_rounded, color: Colors.pinkAccent, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Galaxy Watch4 Vitals',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      Icon(connected ? Icons.watch_rounded : Icons.watch_off_outlined, color: color, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                      IconButton(
+                        tooltip: 'Check again',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.refresh, size: 18, color: Colors.white54),
+                        onPressed: () {
+                          syncService.refreshWatchStatus();
+                          syncService.syncNow();
+                        },
                       ),
                     ],
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.pinkAccent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
+                  if (hint != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 26),
+                      child: Text(hint, style: const TextStyle(color: Colors.white60, fontSize: 11, height: 1.35)),
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Colors.pinkAccent,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'LIVE',
-                          style: TextStyle(
-                            color: Colors.pinkAccent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  if (action != null)
+                    Padding(padding: const EdgeInsets.only(left: 18), child: action),
                 ],
               ),
-              const SizedBox(height: 16),
-              Row(
+            );
+          },
+        ),
+        ValueListenableBuilder<HealthConnectState>(
+          valueListenable: syncService.healthConnectState,
+          builder: (context, state, _) {
+            if (state != HealthConnectState.permissionDenied && state != HealthConnectState.unavailable) {
+              return const SizedBox.shrink();
+            }
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
                 children: [
+                  const Icon(Icons.health_and_safety_outlined, color: AppTheme.warningAmber, size: 18),
+                  const SizedBox(width: 8),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          bpm != null ? '$bpm BPM' : '-- BPM',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 32,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -1,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Last Synced: $timeString',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      state == HealthConnectState.unavailable
+                          ? 'Health Connect is not installed: sleep and steps cannot be read.'
+                          : 'Health Connect access not granted: sleep and steps are not shared.',
+                      style: const TextStyle(color: AppTheme.warningAmber, fontSize: 12),
                     ),
                   ),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.pinkAccent.withValues(alpha: 0.2),
-                      foregroundColor: Colors.pinkAccent,
-                      elevation: 0,
-                      side: const BorderSide(color: Colors.pinkAccent, width: 1),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                  if (state == HealthConnectState.permissionDenied)
+                    TextButton(
+                      onPressed: () async {
+                        if (await syncService.requestHealthPermissions()) {
+                          await syncService.syncNow();
+                        }
+                      },
+                      child: const Text('Allow'),
                     ),
-                    onPressed: () {
-                      final randomBpm = 65 + (DateTime.now().millisecond % 50);
-                      syncService.simulateHeartRate(randomBpm);
-                    },
-                    icon: const Icon(Icons.bolt, size: 16),
-                    label: const Text('Simulate HR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  ),
                 ],
               ),
-            ],
-          ),
-        );
-      },
+            );
+          },
+        ),
+        PatientVitalsPanel(patientId: patientId),
+      ],
     );
   }
 

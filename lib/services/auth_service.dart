@@ -1,24 +1,48 @@
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:crypto/crypto.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
-import '../models/patient.dart';
-import 'database_service.dart';
-import 'backend_api_service.dart';
-import 'token_service.dart';
-import 'fcm_service.dart';
 
+import '../models/patient.dart';
+import 'backend_api_service.dart';
+import 'database_service.dart';
+import 'push_token_service.dart';
+import 'role_service.dart';
+import 'token_service.dart';
+import 'wearable_sync_service.dart';
+
+/// Outcome of a login / signup attempt.
+class AuthOutcome {
+  final bool success;
+  final String? message;
+  final String? code;
+  final String? role;
+  final RoleDestination? destination;
+
+  const AuthOutcome({
+    required this.success,
+    this.message,
+    this.code,
+    this.role,
+    this.destination,
+  });
+
+  factory AuthOutcome.error(String message, {String? code}) =>
+      AuthOutcome(success: false, message: message, code: code);
+}
+
+/// Firebase Authentication wrapper.
+///
+/// * Identity = FirebaseAuth only (no local/offline fake sessions).
+/// * Role = custom claim `role` via [RoleService] only. Client-written
+///   Firestore fields (e.g. `users/{uid}.role`) are NEVER used for routing.
+/// * `users/{uid}` server-owned fields (role, therapistId, ...) are never
+///   written by the client; registration goes through callables.
 class AuthService {
   static final AuthService _instance = AuthService._internal();
-
-  factory AuthService() {
-    return _instance;
-  }
-
+  factory AuthService() => _instance;
   AuthService._internal();
 
   late final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -26,158 +50,343 @@ class AuthService {
   final DatabaseService _dbService = DatabaseService();
   final BackendApiService _backendApi = BackendApiService();
   final TokenService _tokenService = TokenService();
-  late SharedPreferences _prefs;
+  final RoleService _roles = RoleService.instance;
+  SharedPreferences? _prefs;
+
   String? _currentRole;
-  String? _localUserId;
   Map<String, dynamic>? _cachedUserData;
-  final Map<String, Map<String, dynamic>> _userCache = {};
+  bool _loggingOut = false;
 
+  /// True while [logout] is running (the caller handles navigation).
+  bool get isLoggingOut => _loggingOut;
+
+  Future<SharedPreferences> get _sp async => _prefs ??= await SharedPreferences.getInstance();
+
+  /// Restores state for a persisted Firebase session. Never throws.
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
-
-    final storedSession = _prefs.getString('local_auth_session');
-    if (storedSession != null) {
-      try {
-        final session = jsonDecode(storedSession) as Map<String, dynamic>;
-        _localUserId = session['id']?.toString();
-        _currentRole = session['role']?.toString();
-        _cachedUserData = session;
-        if (_localUserId != null) {
-          _userCache[_localUserId!] = _cachedUserData!;
-        }
-      } catch (e) {
-        debugPrint('Failed to restore local auth session: $e');
-      }
-    }
-
     try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        final doc = await _firestore.collection('users').doc(user.uid).get();
-        if (doc.exists) {
-          final data = doc.data()!;
-          _currentRole = data['role'] as String?;
-          _cachedUserData = _buildUserMap(user.uid, data);
-          _userCache[user.uid] = _cachedUserData!;
-          _localUserId = null;
-        }
-        // Refresh the backend JWT on every launch of a persisted Firebase
-        // session. Without this the 7-day backend token silently expires (or
-        // was never issued if the backend was offline at login) and every
-        // backend call - chat, ML crisis check, SOS - fails with 401.
-        // Non-blocking so startup never waits on the network.
-        unawaited(_syncBackendToken(
-          uid: user.uid,
-          email: user.email ?? '',
-          name: _cachedUserData?['name']?.toString(),
-          role: _currentRole,
-        ));
-      } else {
-        if (_localUserId == null) {
-          _currentRole = null;
-          _cachedUserData = null;
-        }
-      }
-    } catch (_) {
-      // Firebase unavailable or offline — use local cache/session if present.
-      if (_localUserId == null) {
-        _currentRole = _prefs.getString('current_role') ?? _currentRole;
-        final cached = _prefs.getString('local_auth_session');
-        if (cached != null) {
-          try {
-            _cachedUserData = jsonDecode(cached) as Map<String, dynamic>;
-          } catch (e) {
-            debugPrint('Failed to decode local auth session: $e');
-          }
-        }
-      }
+      final prefs = await _sp;
+      // Remove legacy offline "local session" data from older builds; it
+      // allowed acting as a user without Firebase credentials.
+      await prefs.remove('local_auth_session');
+      await prefs.remove('local_auth_accounts');
+    } catch (e) {
+      debugPrint('[AuthService] prefs unavailable: $e');
     }
+
+    final user = _auth.currentUser;
+    if (user == null) {
+      _currentRole = null;
+      _cachedUserData = null;
+      return;
+    }
+    _currentRole = await _roles.fetchRoleBestEffort();
+    await refreshProfile();
+    unawaited(_syncBackendToken(
+      uid: user.uid,
+      name: _cachedUserData?['name']?.toString(),
+      role: _currentRole,
+    ));
   }
 
-  String? get currentUserId => _auth.currentUser?.uid ?? _localUserId;
-  String? get currentRole => _currentRole;
-  bool get isAuthenticated => _auth.currentUser != null || _localUserId != null;
+  String? get currentUserId => _auth.currentUser?.uid;
 
-  Map<String, dynamic> _buildUserMap(String uid, Map<String, dynamic> data) {
-    return {
-      'id': uid,
-      'email': data['email'] ?? '',
-      'name': data['name'] ?? '',
-      'role': data['role'] ?? '',
-      'createdAt': _timestampToString(data['createdAt']),
-      'lastLogin': _timestampToString(data['lastLogin']),
-      if (data['therapistId'] != null) 'therapistId': data['therapistId'],
-      if (data['assignedTherapist'] != null) 'assignedTherapist': data['assignedTherapist'],
+  /// Role from the custom claim (null when signed out / not registered).
+  String? get currentRole => _auth.currentUser == null ? null : _currentRole;
+
+  bool get isAuthenticated => _auth.currentUser != null;
+
+  /// Cached profile map: {id, email, name, role, therapistId?, therapistName?}.
+  /// `role` here is the CLAIM role, never the Firestore field.
+  Map<String, dynamic>? getCurrentUser() => _cachedUserData;
+
+  /// Re-reads the role claim (forced refresh when online).
+  Future<String?> refreshRole() async {
+    _currentRole = await _roles.fetchRoleBestEffort();
+    if (_cachedUserData != null) {
+      _cachedUserData = {..._cachedUserData!, 'role': _currentRole};
+    }
+    return _currentRole;
+  }
+
+  /// Reloads `users/{uid}` into the cache. Never throws.
+  Future<Map<String, dynamic>?> refreshProfile() async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    Map<String, dynamic> data = const {};
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .get()
+          .timeout(const Duration(seconds: 10));
+      data = doc.data() ?? const {};
+    } catch (e) {
+      debugPrint('[AuthService] could not load users/${user.uid}: $e');
+      if (_cachedUserData != null && _cachedUserData!['id'] == user.uid) {
+        return _cachedUserData;
+      }
+    }
+    final rawName = data['name'];
+    final therapistId = data['therapistId'];
+    final therapistName = data['therapistName'];
+    _cachedUserData = {
+      'id': user.uid,
+      'email': user.email ?? '',
+      'name': (rawName is String && rawName.trim().isNotEmpty)
+          ? rawName.trim()
+          : (user.displayName ?? (user.email ?? '').split('@').first),
+      'role': _currentRole,
+      if (therapistId is String && therapistId.isNotEmpty) 'therapistId': therapistId,
+      if (therapistName is String && therapistName.isNotEmpty) 'therapistName': therapistName,
     };
+    return _cachedUserData;
   }
 
-  String _timestampToString(dynamic value) {
-    if (value is Timestamp) return value.toDate().toIso8601String();
-    if (value is String) return value;
-    return DateTime.now().toIso8601String();
-  }
-
-  Future<void> _cacheLocally(String uid, Map<String, dynamic> userData) async {
-    await _prefs.setString('current_role', userData['role'] ?? '');
-    await _prefs.setString('cached_user_$uid', jsonEncode(userData));
-    await _prefs.setString('local_auth_session', jsonEncode(userData));
-  }
-
-  /// Exchange the Firebase session for a backend JWT so backend API calls are
-  /// authorized. Non-fatal: when the backend is unreachable or rejects the
-  /// account, local auth still works and a stale token is cleared.
-  Future<void> _syncBackendToken({
-    required String uid,
-    required String email,
-    String? name,
-    String? role,
-  }) async {
+  /// Authoritative `users/{uid}.therapistId` (server-owned). Returns null if
+  /// the patient is not linked or the doc cannot be read. Awaits a server
+  /// read, falling back to Firestore's offline cache.
+  Future<String?> loadTherapistId() async {
+    final uid = currentUserId;
+    if (uid == null) return null;
+    final ref = _firestore.collection('users').doc(uid);
     try {
-      final firebaseUser = FirebaseAuth.instance.currentUser;
+      DocumentSnapshot<Map<String, dynamic>> doc;
+      try {
+        doc = await ref.get().timeout(const Duration(seconds: 8));
+      } catch (_) {
+        doc = await ref.get(const GetOptions(source: Source.cache));
+      }
+      final t = doc.data()?['therapistId'];
+      if (t is String && t.trim().isNotEmpty) {
+        if (_cachedUserData != null) {
+          _cachedUserData = {..._cachedUserData!, 'therapistId': t};
+        }
+        return t;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[AuthService] loadTherapistId failed: $e');
+      final cached = _cachedUserData?['therapistId'];
+      return cached is String && cached.isNotEmpty ? cached : null;
+    }
+  }
+
+  /// Exchange the Firebase session for a backend JWT (AI chat / ML only).
+  Future<void> _syncBackendToken({required String uid, String? name, String? role}) async {
+    try {
+      final firebaseUser = _auth.currentUser;
       final idToken = await firebaseUser?.getIdToken();
       if (firebaseUser == null || firebaseUser.uid != uid || idToken == null) {
         await _tokenService.clearToken();
         return;
       }
-      final result = await _backendApi.firebaseSync(
-        idToken: idToken,
-        name: name,
-        role: role,
-      );
-      if (result['success'] != true) {
-        await _tokenService.clearToken();
-        return;
-      }
-
-      // After a successful sync the backend JWT is stored; register the FCM
-      // token so the server can push chat/clinical notifications to this
-      // device. Non-blocking and non-fatal.
-      unawaited(_registerFcmTokenAfterAuth(uid: uid));
+      final result = await _backendApi.firebaseSync(idToken: idToken, name: name, role: role);
+      if (result['success'] != true) await _tokenService.clearToken();
     } catch (_) {
       await _tokenService.clearToken();
     }
   }
 
-  /// Best-effort FCM token registration with the backend. Only runs on
-  /// platforms that have firebase_messaging (not web).
-  Future<void> _registerFcmTokenAfterAuth({required String uid}) async {
-    if (kIsWeb) return;
+  /// Steps performed after any successful sign-in / registration: read the
+  /// claim, enforce the app/role match (sign out on mismatch), warm caches.
+  Future<AuthOutcome> _completeSignIn() async {
+    final user = _auth.currentUser;
+    if (user == null) return AuthOutcome.error('Sign-in failed. Please try again.');
+
+    String? role;
     try {
-      final messaging = FCMService();
-      final token = await messaging.getToken();
-      if (token == null || token.isEmpty) return;
-      await _backendApi.registerFcmToken(userId: uid, token: token);
+      role = await _roles.fetchRole(forceRefresh: true).timeout(const Duration(seconds: 15));
+    } catch (_) {
+      role = await _roles.fetchRoleBestEffort();
+    }
+    _currentRole = role;
+    final destination = _roles.destinationFor(role);
+
+    if (destination == RoleDestination.wrongApp) {
+      final msg = _roles.wrongAppMessage(role);
+      await logout();
+      return AuthOutcome(
+        success: false,
+        message: msg,
+        code: 'wrong-app',
+        role: role,
+        destination: destination,
+      );
+    }
+
+    await refreshProfile();
+    if (role == AppRoles.patient) {
+      if (!kIsWeb) {
+        await _ensurePatientProfile(
+          userId: user.uid,
+          email: user.email ?? '',
+          name: _cachedUserData?['name']?.toString() ?? '',
+        );
+      }
+      unawaited(WearableSyncService().startForCurrentPatient());
+    }
+    unawaited(_syncBackendToken(
+      uid: user.uid,
+      name: _cachedUserData?['name']?.toString(),
+      role: role,
+    ));
+    return AuthOutcome(success: true, role: role, destination: destination);
+  }
+
+  /// Login with email and password, then verify the role claim matches this
+  /// app. On mismatch the user is signed out and an error is returned.
+  Future<AuthOutcome> login({required String email, required String password}) async {
+    try {
+      await _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
+      return await _completeSignIn();
+    } on FirebaseAuthException catch (e) {
+      debugPrint('[AuthService] login failed: ${e.code}');
+      return AuthOutcome.error(_authMessage(e), code: e.code);
     } catch (e) {
-      debugPrint('FCM token registration skipped: $e');
+      debugPrint('[AuthService] login failed: $e');
+      return AuthOutcome.error('Sign-in failed. Check your connection and try again.');
     }
   }
 
-  /// Update the user's display name across Firestore, the local SQLite
-  /// patient row (mobile), and the backend. Returns the updated user map.
+  /// Creates the Firebase account and registers it as a patient of the
+  /// therapist who owns [inviteCode] (callable `registerPatient`).
+  Future<AuthOutcome> signupPatient({
+    required String email,
+    required String password,
+    required String name,
+    required String inviteCode,
+  }) {
+    return _signupWith(
+      email: email,
+      password: password,
+      name: name,
+      register: () => _roles.registerPatient(name: name, inviteCode: inviteCode),
+    );
+  }
+
+  /// Creates the Firebase account and requests therapist registration
+  /// (callable `registerTherapist`; claim becomes `therapist_pending`).
+  Future<AuthOutcome> signupTherapist({
+    required String email,
+    required String password,
+    required String name,
+    String? licenseNumber,
+    String? specialty,
+  }) {
+    return _signupWith(
+      email: email,
+      password: password,
+      name: name,
+      register: () => _roles.registerTherapist(
+        name: name,
+        licenseNumber: licenseNumber,
+        specialty: specialty,
+      ),
+    );
+  }
+
+  Future<AuthOutcome> _signupWith({
+    required String email,
+    required String password,
+    required String name,
+    required Future<CallableResult> Function() register,
+  }) async {
+    UserCredential credential;
+    try {
+      credential = await _auth.createUserWithEmailAndPassword(email: email.trim(), password: password);
+    } on FirebaseAuthException catch (e) {
+      return AuthOutcome.error(_authMessage(e), code: e.code);
+    } catch (e) {
+      return AuthOutcome.error('Could not create the account. Check your connection and try again.');
+    }
+
+    try {
+      await credential.user?.updateDisplayName(name);
+    } catch (_) {}
+
+    final result = await register();
+    if (!result.success) {
+      if (result.isNetworkError) {
+        // Keep the account; the next sign-in routes to "complete registration".
+        return AuthOutcome(
+          success: false,
+          code: 'registration-incomplete',
+          message: '${result.message} Your account was created - sign in again to finish registration.',
+        );
+      }
+      // Server rejected (e.g. bad invite code): delete the orphan account so
+      // the email can be reused, then sign out.
+      try {
+        await credential.user?.delete();
+      } catch (e) {
+        debugPrint('[AuthService] could not delete orphan account: $e');
+      }
+      await logout();
+      return AuthOutcome.error(result.message ?? 'Registration failed.', code: result.code);
+    }
+    return _completeSignIn();
+  }
+
+  /// For an already signed-in account that has no role claim yet.
+  Future<AuthOutcome> completePatientRegistration({required String name, required String inviteCode}) async {
+    final r = await _roles.registerPatient(name: name, inviteCode: inviteCode);
+    if (!r.success) return AuthOutcome.error(r.message ?? 'Registration failed.', code: r.code);
+    return _completeSignIn();
+  }
+
+  Future<AuthOutcome> completeTherapistRegistration({
+    required String name,
+    String? licenseNumber,
+    String? specialty,
+  }) async {
+    final r = await _roles.registerTherapist(name: name, licenseNumber: licenseNumber, specialty: specialty);
+    if (!r.success) return AuthOutcome.error(r.message ?? 'Registration failed.', code: r.code);
+    return _completeSignIn();
+  }
+
+  /// Patient switches/links therapist via invite code (callable `joinTherapist`).
+  Future<CallableResult> joinTherapist(String inviteCode) async {
+    final r = await _roles.joinTherapist(inviteCode: inviteCode);
+    if (r.success) {
+      await refreshProfile();
+      // Restart wearable sync so new vitals carry the new therapistId.
+      try {
+        await WearableSyncService().stop();
+        await WearableSyncService().startForCurrentPatient();
+      } catch (e) {
+        debugPrint('[AuthService] wearable restart failed: $e');
+      }
+    }
+    return r;
+  }
+
+  /// Password recovery via Firebase email link. Unknown emails get the same
+  /// neutral message to avoid account enumeration.
+  Future<AuthOutcome> sendPasswordReset(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'invalid-email' ||
+          e.code == 'network-request-failed' ||
+          e.code == 'too-many-requests') {
+        return AuthOutcome.error(_authMessage(e), code: e.code);
+      }
+      // user-not-found etc.: fall through to the neutral message.
+    } catch (e) {
+      return AuthOutcome.error('Could not send the email. Check your connection and try again.');
+    }
+    return const AuthOutcome(
+      success: true,
+      message: 'If an account exists for that email, a password reset link has been sent. '
+          'Check your inbox and spam folder.',
+    );
+  }
+
+  /// Update the user's display name (client-writable `name` field).
   Future<Map<String, dynamic>?> updateDisplayName(String newName) async {
     final name = newName.trim();
     if (name.length < 2) return null;
-
     final uid = currentUserId;
     if (uid == null) return null;
 
@@ -186,211 +395,71 @@ class AuthService {
     } catch (e) {
       debugPrint('Firestore name update failed: $e');
     }
-
-    // Refresh the in-memory + cached session data.
+    try {
+      await _auth.currentUser?.updateDisplayName(name);
+    } catch (_) {}
     if (_cachedUserData != null) {
       _cachedUserData = {..._cachedUserData!, 'name': name};
-      _userCache[uid] = _cachedUserData!;
-      await _cacheLocally(uid, _cachedUserData!);
     }
-
-    // Mirror into the mobile SQLite patients table.
-    if (!kIsWeb && _currentRole == 'patient') {
+    if (!kIsWeb && _currentRole == AppRoles.patient) {
       try {
         final existing = await _dbService.getPatient(uid);
-        if (existing != null) {
-          await _dbService.updatePatient(existing.copyWith(name: name));
-        }
+        if (existing != null) await _dbService.updatePatient(existing.copyWith(name: name));
       } catch (e) {
         debugPrint('SQLite name update failed: $e');
       }
     }
-
-    // Mirror into the backend (users + shared clinic tables).
     try {
       await _backendApi.updateMyName(name);
     } catch (e) {
       debugPrint('Backend name update failed: $e');
     }
-
     return _cachedUserData;
   }
 
-  /// Signup with email and password
-  Future<Map<String, dynamic>> signup({
-    required String email,
-    required String password,
-    required String name,
-    required String role, // 'patient' or 'therapist'
-    List<String>? securityQuestions,
-    List<String>? securityAnswers,
-    String? therapistId,
-    String? assignedTherapist,
-  }) async {
-    try {
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      final uid = credential.user!.uid;
-      final now = DateTime.now().toIso8601String();
-
-      // Per-user random salt so identical answers produce different hashes.
-      final salt = _generateSalt();
-      final hashedAnswers = securityAnswers
-              ?.map((a) => _hashSecurityAnswer(a, salt))
-              .toList() ??
-          [];
-
-      // Save extra user data to Firestore
-      final userDoc = {
-        'name': name,
-        'email': email,
-        'role': role,
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastLogin': FieldValue.serverTimestamp(),
-        'securityQuestions': securityQuestions ?? [],
-        'securityAnswers': hashedAnswers,
-        'securityAnswersSalt': salt,
-        if (therapistId != null) 'therapistId': therapistId,
-        if (assignedTherapist != null) 'assignedTherapist': assignedTherapist,
-      };
-      debugPrint('[AuthService] Writing user doc for uid=$uid role=$role therapistId=$therapistId');
-      await _firestore.collection('users').doc(uid).set(
-        userDoc,
-        SetOptions(merge: true),
-      );
-      debugPrint('[AuthService] Firestore write succeeded for uid=$uid');
-
-      _currentRole = role;
-      _cachedUserData = {
-        'id': uid,
-        'email': email,
-        'name': name,
-        'role': role,
-        'createdAt': now,
-        'lastLogin': now,
-        if (therapistId != null) 'therapistId': therapistId,
-        if (assignedTherapist != null) 'assignedTherapist': assignedTherapist,
-      };
-      _userCache[uid] = _cachedUserData!;
-      await _cacheLocally(uid, _cachedUserData!);
-
-      if (role == 'patient' && !kIsWeb) {
-        await _ensurePatientProfile(userId: uid, email: email, name: name);
-      }
-
-      await _syncBackendToken(uid: uid, email: email, name: name, role: role);
-
-      final token = await credential.user!.getIdToken();
-      return {
-        'success': true,
-        'userId': uid,
-        'role': role,
-        'token': token,
-      };
-    } on FirebaseAuthException catch (e) {
-      debugPrint('[AuthService] Signup auth failed: ${e.code} ${e.message}');
-      return {
-        'success': false,
-        'message': e.message ?? 'Firebase signup failed',
-        'code': e.code,
-      };
-    } catch (e) {
-      debugPrint('[AuthService] Signup failed: $e');
-      return {
-        'success': false,
-        'message': e.toString(),
-      };
-    }
-  }
-
-  /// Login with email and password
-  Future<Map<String, dynamic>> login({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      final uid = credential.user!.uid;
-
-      final doc = await _firestore.collection('users').doc(uid).get();
-      final data = doc.data() ?? {};
-
-      _currentRole = (data['role'] as String?) ?? 'patient';
-      _cachedUserData = _buildUserMap(uid, {
-        'email': email,
-        'name': data['name'] ?? email.split('@').first,
-        'role': _currentRole,
-        ...data,
-      });
-      _userCache[uid] = _cachedUserData!;
-      await _cacheLocally(uid, _cachedUserData!);
-
-      // Update last login (non-blocking)
-      _firestore.collection('users').doc(uid).update({
-        'lastLogin': FieldValue.serverTimestamp(),
-      });
-
-      if (_currentRole == 'patient' && !kIsWeb) {
-        await _ensurePatientProfile(
-          userId: uid,
-          email: email,
-          name: _cachedUserData!['name'] as String,
-        );
-      }
-
-      await _syncBackendToken(
-        uid: uid,
-        email: email,
-        name: _cachedUserData!['name']?.toString(),
-        role: _currentRole,
-      );
-
-      final token = await credential.user!.getIdToken();
-      return {
-        'success': true,
-        'userId': uid,
-        'role': _currentRole,
-        'name': _cachedUserData!['name'],
-        'token': token,
-      };
-    } on FirebaseAuthException catch (e) {
-      debugPrint('[AuthService] Login auth failed: ${e.code} ${e.message}');
-      return {
-        'success': false,
-        'message': e.message ?? 'Firebase login failed',
-        'code': e.code,
-      };
-    } catch (e) {
-      debugPrint('[AuthService] Login failed: $e');
-      return {
-        'success': false,
-        'message': e.toString(),
-      };
-    }
-  }
-
-  /// Logout
+  /// Logout: unregister this device's push token and stop wearable sync
+  /// BEFORE signing out (both need the user's credentials to pass rules).
   Future<void> logout() async {
-    final keys = _prefs.getKeys();
-    for (final key in keys) {
-      if (key.startsWith('last_assessment_') ||
-          key.startsWith('privacy_') ||
-          key == 'chat_last_open_thread') {
-        await _prefs.remove(key);
+    _loggingOut = true;
+    try {
+      await _logout();
+    } finally {
+      _loggingOut = false;
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      await PushTokenService.unregister();
+    } catch (e) {
+      debugPrint('[AuthService] push unregister failed: $e');
+    }
+    try {
+      await WearableSyncService().stop();
+    } catch (e) {
+      debugPrint('[AuthService] wearable stop failed: $e');
+    }
+    try {
+      final prefs = await _sp;
+      for (final key in prefs.getKeys().toList()) {
+        if (key.startsWith('last_assessment_') ||
+            key.startsWith('privacy_') ||
+            key.startsWith('cached_user_') ||
+            key == 'chat_last_open_thread' ||
+            key == 'current_role' ||
+            key == 'local_auth_session' ||
+            key == 'local_auth_accounts') {
+          await prefs.remove(key);
+        }
       }
+    } catch (e) {
+      debugPrint('[AuthService] prefs cleanup failed: $e');
     }
     _currentRole = null;
-    _localUserId = null;
     _cachedUserData = null;
-    await _prefs.remove('current_role');
-    await _prefs.remove('local_auth_session');
-    await _prefs.remove('local_auth_accounts');
-    await _tokenService.clearToken();
+    try {
+      await _tokenService.clearToken();
+    } catch (_) {}
     try {
       await _auth.signOut();
     } catch (e) {
@@ -398,41 +467,32 @@ class AuthService {
     }
   }
 
-  /// Get current user data
-  Map<String, dynamic>? getCurrentUser() {
-    return _cachedUserData;
-  }
-
-  Map<String, dynamic>? getUserById(String userId) {
-    return _userCache[userId];
-  }
-
-  List<Map<String, dynamic>> getUsersByRole(String role) {
-    return _userCache.values
-        .where((u) => u['role'] == role)
-        .toList();
-  }
-
-  Map<String, dynamic>? getFirstUserByRole(String role) {
-    final users = getUsersByRole(role);
-    return users.isNotEmpty ? users.first : null;
-  }
-
-  /// Delete account
+  /// Delete the Firebase account (requires a recent login). Server-side
+  /// cleanup of `users/{uid}` is the backend's responsibility (clients may
+  /// not delete server-owned docs).
   Future<bool> deleteAccount(String email) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
     try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        await _firestore.collection('users').doc(user.uid).delete();
-        await user.delete();
-      }
-      _currentRole = null;
-      _cachedUserData = null;
-      await _prefs.remove('current_role');
-      return true;
+      await PushTokenService.unregister();
+    } catch (_) {}
+    try {
+      await WearableSyncService().stop();
+    } catch (_) {}
+    try {
+      await user.delete();
     } catch (e) {
+      debugPrint('[AuthService] account delete failed: $e');
       return false;
     }
+    _currentRole = null;
+    _cachedUserData = null;
+    try {
+      await _tokenService.clearToken();
+      final prefs = await _sp;
+      await prefs.remove('current_role');
+    } catch (_) {}
+    return true;
   }
 
   Future<void> _ensurePatientProfile({
@@ -441,144 +501,52 @@ class AuthService {
     required String name,
   }) async {
     if (kIsWeb) return;
-
     try {
       final existing = await _dbService.getPatient(userId);
-      final now = DateTime.now().toIso8601String();
+      final now = DateTime.now();
       if (existing != null) {
-        await _dbService.updatePatient(
-          Patient(
-            id: existing.id,
-            name: name,
-            email: email,
-            age: existing.age,
-            therapistId: existing.therapistId,
-            currentRiskScore: existing.currentRiskScore,
-            riskScore: existing.riskScore,
-            wellbeingScore: existing.wellbeingScore,
-            lastUpdated: now,
-            createdAt: existing.createdAt,
-            lastCheckIn: existing.lastCheckIn,
-            missedSessions: existing.missedSessions,
-            isDemo: existing.isDemo,
-          ),
-        );
+        await _dbService.updatePatient(existing.copyWith(name: name, email: email));
         return;
       }
-
-      final patient = Patient(
+      // Local on-device cache row only (used by on-device ML history).
+      await _dbService.insertPatient(Patient(
         id: userId,
         name: name,
         email: email,
-        age: 25,
+        age: 0,
         currentRiskScore: 0.0,
         riskScore: 0.0,
         wellbeingScore: 50.0,
-        lastUpdated: now,
-        createdAt: DateTime.now(),
-        lastCheckIn: DateTime.now(),
-        missedSessions: 0,
-        isDemo: false,
-      );
-
-      await _dbService.insertPatient(patient);
+        lastUpdated: now.toIso8601String(),
+        createdAt: now,
+        lastCheckIn: now,
+      ));
     } catch (_) {
-      // Keep auth flow responsive even if profile sync fails.
+      // Keep auth flow responsive even if local profile sync fails.
     }
   }
 
-  /// Get security questions for password recovery
-  Future<Map<String, dynamic>> getSecurityQuestions(String email) async {
-    try {
-      final query = await _firestore
-          .collection('users')
-          .where('email', isEqualTo: email)
-          .limit(1)
-          .get();
-
-      if (query.docs.isEmpty) {
-        return {'success': false, 'message': 'Email not found'};
-      }
-
-      final data = query.docs.first.data();
-      final questions = data['securityQuestions'] as List<dynamic>?;
-
-      if (questions == null || questions.isEmpty) {
-        return {'success': false, 'message': 'No security questions set for this account'};
-      }
-
-      return {'success': true, 'questions': questions};
-    } catch (e) {
-      return {'success': false, 'message': 'Error retrieving questions: $e'};
+  String _authMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'user-disabled':
+        return 'This account has been disabled. Contact your clinic.';
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+      case 'INVALID_LOGIN_CREDENTIALS':
+        return 'Incorrect email or password.';
+      case 'email-already-in-use':
+        return 'An account already exists for this email. Sign in instead.';
+      case 'weak-password':
+        return 'Password is too weak. Use at least 8 characters.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait a few minutes and try again.';
+      case 'network-request-failed':
+        return 'No internet connection. Please try again when online.';
+      default:
+        return e.message ?? 'Authentication failed (${e.code}).';
     }
-  }
-
-  /// Verify security answers
-  Future<Map<String, dynamic>> verifySecurityAnswers({
-    required String email,
-    required List<String> answers,
-  }) async {
-    try {
-      final query = await _firestore
-          .collection('users')
-          .where('email', isEqualTo: email)
-          .limit(1)
-          .get();
-
-      if (query.docs.isEmpty) {
-        return {'success': false, 'message': 'User not found'};
-      }
-
-      final data = query.docs.first.data();
-      final storedAnswers = List<String>.from(data['securityAnswers'] ?? []);
-      final storedSalt = (data['securityAnswersSalt'] as String?) ?? '';
-
-      if (storedAnswers.isEmpty) {
-        return {'success': false, 'message': 'No security answers configured'};
-      }
-
-      final hashedAnswers = answers
-          .map((a) => _hashSecurityAnswer(a, storedSalt))
-          .toList();
-
-      bool allMatch = true;
-      for (int i = 0; i < storedAnswers.length && i < hashedAnswers.length; i++) {
-        if (storedAnswers[i] != hashedAnswers[i]) {
-          allMatch = false;
-          break;
-        }
-      }
-
-      return allMatch
-          ? {'success': true}
-          : {'success': false, 'message': 'Incorrect answers'};
-    } catch (e) {
-      return {'success': false, 'message': 'Error verifying answers: $e'};
-    }
-  }
-
-  /// Reset password via Firebase email link
-  Future<Map<String, dynamic>> resetPassword({
-    required String email,
-    required String newPassword,
-  }) async {
-    try {
-      await _auth.sendPasswordResetEmail(email: email);
-      return {'success': true, 'message': 'Password reset email sent. Check your inbox.'};
-    } catch (e) {
-      return {'success': false, 'message': 'Error resetting password: $e'};
-    }
-  }
-
-  /// Generate a 32-char random hex salt for security answers.
-  String _generateSalt() {
-    final random = Random.secure();
-    return List.generate(32, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
-        .join();
-  }
-
-  /// Hash a security answer with the user's salt (HMAC-style, per-user salt).
-  String _hashSecurityAnswer(String answer, String salt) {
-    return sha256.convert(utf8.encode('$salt:${answer.toLowerCase().trim()}')).toString();
   }
 }

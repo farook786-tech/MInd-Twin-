@@ -1,7 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/auth_service.dart';
-import '../../services/database_service.dart';
 import 'dashboard_tab.dart';
 import 'patients_tab.dart';
 import 'simulator_tab.dart';
@@ -25,32 +26,35 @@ class TherapistDashboardScreen extends StatefulWidget {
 class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
   int _selectedIndex = 0;
 
-  final List<Widget> _tabs = const [
-    DashboardTab(),
-    PatientsTab(),
-    AppointmentsScreen(),
-    SimulatorTab(),
-    FederatedTab(),
+  // The intervention simulator is a developer tool: it only exists in debug
+  // builds and is never part of the release therapist app.
+  final List<Widget> _tabs = [
+    const DashboardTab(),
+    const PatientsTab(),
+    const AppointmentsScreen(),
+    if (kDebugMode) const SimulatorTab(),
+    const FederatedTab(),
   ];
 
-  final List<NavigationRailDestination> _destinations = const [
-    NavigationRailDestination(
+  final List<NavigationRailDestination> _destinations = [
+    const NavigationRailDestination(
       icon: Icon(Icons.dashboard),
       label: Text('Dashboard'),
     ),
-    NavigationRailDestination(
+    const NavigationRailDestination(
       icon: Icon(Icons.people),
       label: Text('Patients'),
     ),
-    NavigationRailDestination(
+    const NavigationRailDestination(
       icon: Icon(Icons.calendar_today),
       label: Text('Appointments'),
     ),
-    NavigationRailDestination(
-      icon: Icon(Icons.science),
-      label: Text('Simulator'),
-    ),
-    NavigationRailDestination(
+    if (kDebugMode)
+      const NavigationRailDestination(
+        icon: Icon(Icons.science),
+        label: Text('Simulator (debug)'),
+      ),
+    const NavigationRailDestination(
       icon: Icon(Icons.hub),
       label: Text('Network'),
     ),
@@ -58,6 +62,22 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
 
   Future<void> _handleQuickAction(String action) async {
     switch (action) {
+      case 'invite':
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            backgroundColor: AppTheme.cardDark,
+            contentPadding: const EdgeInsets.all(12),
+            content: const SizedBox(width: 420, child: TherapistInviteCodeCard()),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+        break;
       case 'alerts':
         await Navigator.push(
           context,
@@ -132,6 +152,16 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
             color: AppTheme.cardDark,
             onSelected: _handleQuickAction,
             itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'invite',
+                child: Row(
+                  children: [
+                    Icon(Icons.qr_code_rounded, color: Colors.white70, size: 18),
+                    SizedBox(width: 10),
+                    Text('Your Invite Code', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
               PopupMenuItem<String>(
                 value: 'alerts',
                 child: Row(
@@ -291,8 +321,27 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
   }
 
   Future<void> _showPatientsForReports() async {
-    final db = DatabaseService();
-    final patients = await db.getAllPatients();
+    final therapistId = AuthService().currentUserId;
+    if (therapistId == null) return;
+    // The therapist's own roster from Firestore (never local SQLite).
+    List<_RosterEntry> patients;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('therapistId', isEqualTo: therapistId)
+          .where('role', isEqualTo: 'patient')
+          .get();
+      patients = snap.docs
+          .map((d) => _RosterEntry(d.id, (d.data()['name'] ?? 'Unnamed Patient').toString()))
+          .toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load patients: $error'), backgroundColor: AppTheme.riskRed),
+      );
+      return;
+    }
     if (!mounted) return;
 
     if (patients.isEmpty) {
@@ -302,7 +351,7 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
       return;
     }
 
-    final selected = await showDialog<dynamic>(
+    final selected = await showDialog<_RosterEntry>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
@@ -314,7 +363,7 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
                 .map(
                   (patient) => ListTile(
                     title: Text(patient.name),
-                    subtitle: Text('ID: ${patient.id}'),
+
                     onTap: () => Navigator.pop(context, patient),
                   ),
                 )
@@ -342,4 +391,11 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
       );
     }
   }
+}
+
+class _RosterEntry {
+  final String id;
+  final String name;
+
+  const _RosterEntry(this.id, this.name);
 }

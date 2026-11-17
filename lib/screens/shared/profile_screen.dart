@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
+import '../auth/join_therapist_dialog.dart';
 
 /// Shared profile screen for both patient and therapist roles.
 /// Lets the user edit their display name; the change is pushed to
@@ -52,6 +53,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       Navigator.of(context).pop(true);
     } else {
       _showSnack('Could not update profile. Try again.');
+    }
+  }
+
+  /// Links the patient to a different therapist via the server-side
+  /// `joinTherapist` callable (the dialog handles validation and errors).
+  Future<void> _changeTherapist() async {
+    final therapistName = await showJoinTherapistDialog(context);
+    if (therapistName != null) {
+      _showSnack('You are now linked to $therapistName.');
     }
   }
 
@@ -131,6 +141,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
           ),
+          if (!_isTherapist) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _saving ? null : _changeTherapist,
+              icon: const Icon(Icons.swap_horiz_rounded),
+              label: const Text('Change therapist (invite code)'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
+          ],
         ],
       ),
     );

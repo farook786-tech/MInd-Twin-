@@ -2,22 +2,37 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-feature android:name="android.hardware.type.watch" />
-    <uses-permission android:name="android.permission.BODY_SENSORS" />
+
+    <!-- Heart-rate sensor access.
+         API 30-35 (Galaxy Watch4 on Wear OS 3/4/5): BODY_SENSORS (+ BODY_SENSORS_BACKGROUND on 33+).
+         API 36+ (Wear OS 6): granular Health permissions replace BODY_SENSORS. -->
+    <uses-permission android:name="android.permission.BODY_SENSORS" android:maxSdkVersion="35" />
+    <uses-permission android:name="android.permission.BODY_SENSORS_BACKGROUND" android:maxSdkVersion="35" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
+
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Required on API 34+ for foregroundServiceType="health". -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Restart monitoring after reboot / app update (passive registrations do not survive them). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
-        android:allowBackup="true"
-        android:label="MindTwin Wear"
+        android:allowBackup="false"
+        android:label="MindTwin"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault">
-        
+
         <uses-library
             android:name="com.google.android.wearable"
             android:required="true" />
+
+        <!-- This watch app works with the MindTwin patient phone app. -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="false" />
 
         <activity
             android:name=".MainActivity"
@@ -27,14 +42,22 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Opened from the phone's "Link your watch" flow (RemoteActivityHelper) so the
+                 patient can grant the heart-rate permission on the watch. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mindtwin" android:host="watch" android:path="/start" />
+            </intent-filter>
         </activity>
 
         <service
             android:name=".PassiveDataService"
             android:exported="true"
-            android:permission="com.google.android.wearable.permission.BIND_PASSIVE_DATA_SERVICE">
+            android:permission="com.google.android.wearable.healthservices.permission.PASSIVE_DATA_BINDING">
             <intent-filter>
-                <action android:name="androidx.health.services.client.PassiveListenerService" />
+                <action android:name="hs.passivelistener.BIND" />
             </intent-filter>
         </service>
 
@@ -42,6 +65,15 @@
             android:name=".HeartRateService"
             android:exported="false"
             android:foregroundServiceType="health" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

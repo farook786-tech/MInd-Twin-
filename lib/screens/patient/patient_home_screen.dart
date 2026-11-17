@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/twin_chart.dart';
+import '../../models/appointment_v2.dart';
+import '../../services/appointment_service.dart';
 import '../../services/auth_service.dart';
 import '../chat/chat_screen.dart';
 import '../shared/profile_screen.dart';
@@ -12,6 +16,7 @@ import 'daily_checkin_screen.dart';
 import 'ethics_control_screen.dart';
 import 'my_twin_screen.dart';
 import 'patient_ai_chat_screen.dart';
+import 'patient_appointments_screen.dart';
 import 'phq9_assessment_screen.dart';
 import 'safety_resources_screen.dart';
 import 'voice_journal_screen.dart';
@@ -26,14 +31,34 @@ class PatientHomeScreen extends StatefulWidget {
 class _PatientHomeScreenState extends State<PatientHomeScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
+  final AppointmentService _appointmentService = AppointmentService();
 
   int _currentIndex = 0;
+  bool _sosInProgress = false;
+
+  // Streams/futures are created once per patient (not on every rebuild) so
+  // listeners are not torn down and re-created; StreamBuilder cancels them
+  // when this State is disposed.
+  String? _streamsFor;
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _userStreamCache;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _dailyLogsStreamCache;
+  Stream<List<AppointmentV2>>? _appointmentsStreamCache;
+  Future<int>? _streakFuture;
 
   String? get _patientId => _authService.currentUserId;
 
-  DateTime _todayMidnight() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day);
+  void _ensureStreams(String patientId) {
+    if (_streamsFor == patientId) return;
+    _streamsFor = patientId;
+    _userStreamCache =
+        _firestore.collection('users').doc(patientId).snapshots();
+    _dailyLogsStreamCache = _firestore
+        .collection('daily_logs')
+        .where('patientId', isEqualTo: patientId)
+        .limit(10)
+        .snapshots();
+    _appointmentsStreamCache = _appointmentService.watchForPatient(patientId);
+    _streakFuture = null;
   }
 
   bool _isSameDay(DateTime a, DateTime b) {
@@ -67,24 +92,18 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   }
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _userStream(String patientId) {
-    return _firestore.collection('users').doc(patientId).snapshots();
+    _ensureStreams(patientId);
+    return _userStreamCache!;
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _dailyLogsStream(String patientId) {
-    return _firestore
-        .collection('daily_logs')
-        .where('patientId', isEqualTo: patientId)
-        .limit(10)
-        .snapshots();
+    _ensureStreams(patientId);
+    return _dailyLogsStreamCache!;
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _todayAppointmentStream(String patientId) {
-    return _firestore
-        .collection('appointments')
-        .where('patientId', isEqualTo: patientId)
-        .where('scheduledAt', isGreaterThanOrEqualTo: Timestamp.fromDate(_todayMidnight()))
-        .limit(10)
-        .snapshots();
+  Stream<List<AppointmentV2>> _appointmentsStream(String patientId) {
+    _ensureStreams(patientId);
+    return _appointmentsStreamCache!;
   }
 
   String _timeGreeting() {
@@ -140,7 +159,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
     return '→ Same';
   }
 
-  Future<int> _calculateAndPersistStreak(String patientId) async {
+  /// Fallback when `users.streak` is absent: computed locally from daily_logs.
+  /// Not written back (the check-in flow owns `streak`).
+  Future<int> _calculateStreak(String patientId) async {
     final now = DateTime.now();
     final startWindow = now.subtract(const Duration(days: 400));
 
@@ -165,11 +186,6 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       streak += 1;
       cursor = cursor.subtract(const Duration(days: 1));
     }
-
-    await _firestore.collection('users').doc(patientId).set({
-      'streak': streak,
-      'lastStreakUpdate': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
 
     return streak;
   }
@@ -274,9 +290,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       return;
     }
 
-    final therapistDoc = await _firestore.collection('users').doc(therapistId).get();
+    // Patients may not read their therapist's users doc (security rules);
+    // the server stamps therapistName on the patient's own doc when linking.
     final therapistName =
-        _toStringOrNull(therapistDoc.data()?['name']) ?? 'Therapist name unavailable';
+        _toStringOrNull(userData?['therapistName']) ?? 'Your therapist';
 
     if (!mounted) return;
     await Navigator.push(
@@ -300,7 +317,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   Widget _buildGreetingCard(Map<String, dynamic>? userData) {
     final name = _toStringOrNull(userData?['name']) ?? 'there';
     final greeting = _timeGreeting();
-    final lastCheckInDate = _toDateTime(userData?['lastCheckInDate']);
+    final lastCheckInDate = _toDateTime(userData?['lastCheckInAt']) ??
+        _toDateTime(userData?['lastCheckInDate']);
     final latestRiskScore = _toDouble(userData?['latestRiskScore']);
 
     return AppCard(
@@ -370,7 +388,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
         final normalizedRisk = riskScore.clamp(0.0, 100.0);
         final riskBand = _riskBand(normalizedRisk);
-        final userRiskLevel = _toStringOrNull(userData?['latestRiskLevel']);
+        final userRiskLevel = _toStringOrNull(userData?['latestRiskState']) ??
+            _toStringOrNull(userData?['latestRiskLevel']);
         final riskLevelText = userRiskLevel ?? _riskLevelForUserField(normalizedRisk);
 
         return AppCard(
@@ -457,7 +476,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
     final streak = _toInt(userData?['streak']);
     if (streak == null) {
       return FutureBuilder<int>(
-        future: _calculateAndPersistStreak(patientId),
+        future: _streakFuture ??= _calculateStreak(patientId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const AppCard(child: Center(child: CircularProgressIndicator()));
@@ -690,6 +709,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         ),
         const SizedBox(width: 10),
         item(
+          emoji: '📅',
+          label: 'Sessions',
+          onTap: _openSessions,
+        ),
+        const SizedBox(width: 10),
+        item(
           emoji: '📋',
           label: 'PHQ-9 Check',
           onTap: () {
@@ -714,55 +739,309 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
     );
   }
 
-  Widget _buildAppointmentReminder(String patientId) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _todayAppointmentStream(patientId),
+  void _openSessions() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PatientAppointmentsScreen()),
+    );
+  }
+
+  /// Next session (or pending requests) — live from Firestore `appointments`.
+  Widget _buildUpcomingSessionCard(String patientId) {
+    return StreamBuilder<List<AppointmentV2>>(
+      stream: _appointmentsStream(patientId),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const SizedBox.shrink();
-        }
-
-        if (snapshot.hasError && !snapshot.hasData) {
-          return const SizedBox.shrink();
-        }
-
-        final docs = snapshot.data?.docs ??
-            <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-        if (docs.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        final sortedDocs = docs.toList()
-          ..sort((a, b) {
-            final aTime = _toDateTime(a.data()['scheduledAt']);
-            final bTime = _toDateTime(b.data()['scheduledAt']);
-            if (aTime == null || bTime == null) return 0;
-            return aTime.compareTo(bTime);
-          });
-
-        final data = sortedDocs.first.data();
-        final scheduledAt = _toDateTime(data['scheduledAt']);
-        if (scheduledAt == null ||
-            !_isSameDay(scheduledAt.toLocal(), DateTime.now().toLocal())) {
-          return const SizedBox.shrink();
-        }
-
-        final therapistName =
-            _toStringOrNull(data['therapistName']) ?? 'Therapist name unavailable';
-        final timeText = DateFormat('hh:mm a').format(scheduledAt);
-
-        return AppCard(
-          child: Text(
-            '📅 Session with $therapistName at $timeText today',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+        if (snapshot.hasError) {
+          return AppCard(
+            onTap: _openSessions,
+            child: Text(
+              'Could not load your sessions. Tap to open.\n'
+              '${AppointmentService.describeError(snapshot.error!)}',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const AppCard(
+            child: SizedBox(height: 4, child: LinearProgressIndicator()),
+          );
+        }
+
+        final now = DateTime.now();
+        final all = snapshot.data!;
+        final upcoming = all
+            .where((a) =>
+                a.isScheduled && a.scheduledEnd != null && now.isBefore(a.scheduledEnd!))
+            .toList()
+          ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+        final pendingCount = all.where((a) => a.isRequested).length;
+        final pendingLabel =
+            '$pendingCount session request${pendingCount == 1 ? '' : 's'} pending';
+
+        const titleStyle = TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+        );
+        final subStyle = TextStyle(
+          color: Colors.white.withValues(alpha: 0.8),
+          fontSize: 13,
+        );
+
+        if (upcoming.isEmpty) {
+          return AppCard(
+            onTap: _openSessions,
+            child: Row(
+              children: [
+                const Text('📅', style: TextStyle(fontSize: 24)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        pendingCount > 0 ? pendingLabel : 'No upcoming sessions',
+                        style: titleStyle,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        pendingCount > 0
+                            ? 'Your therapist will confirm a time soon.'
+                            : 'Need to talk? Request an online session.',
+                        style: subStyle,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.white70),
+              ],
+            ),
+          );
+        }
+
+        final next = upcoming.first;
+        return AppCard(
+          onTap: _openSessions,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(next.isVirtual ? Icons.videocam : Icons.location_on,
+                      color: Colors.white70, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Next session with ${next.therapistName}', style: titleStyle),
+                  ),
+                  const Icon(Icons.chevron_right, color: Colors.white70),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${formatAppointmentTime(next.scheduledAt!)} • ${next.durationMinutes} min • '
+                '${next.isVirtual ? 'Online' : 'In person'}',
+                style: subStyle,
+              ),
+              if (pendingCount > 0) ...[
+                const SizedBox(height: 4),
+                Text('+ $pendingLabel', style: subStyle),
+              ],
+              if (next.isVirtual) ...[
+                const SizedBox(height: 10),
+                AppointmentJoinButton(appointment: next),
+              ],
+            ],
           ),
         );
       },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SOS
+  // ---------------------------------------------------------------------------
+
+  static const List<_EmergencyContact> _emergencyContacts = [
+    _EmergencyContact('Emergency services (international / EU / India)', '112'),
+    _EmergencyContact('Emergency services (US / Canada)', '911'),
+    _EmergencyContact('Emergency services (UK)', '999'),
+    _EmergencyContact('Suicide & Crisis Lifeline (US / Canada)', '988'),
+    _EmergencyContact('Samaritans (UK / Ireland)', '116123'),
+    _EmergencyContact('Tele-MANAS mental health helpline (India)', '14416'),
+  ];
+
+  Future<void> _onSosPressed() async {
+    if (_sosInProgress) return;
+    final patientId = _patientId;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.cardDark,
+        title: const Text('Send SOS alert?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Your therapist will be alerted immediately that you need urgent help. '
+          'Emergency numbers will be shown next.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.riskRed,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Send SOS'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _sosInProgress = true);
+    String status;
+    var sent = false;
+    try {
+      if (patientId == null) {
+        status = 'The alert could not be sent: you are signed out.';
+      } else {
+        final userDoc = await _firestore
+            .collection('users')
+            .doc(patientId)
+            .get()
+            .timeout(const Duration(seconds: 8));
+        final userData = userDoc.data();
+        final therapistId = _toStringOrNull(userData?['therapistId']);
+        final patientName = _toStringOrNull(userData?['name']) ?? 'Patient';
+        if (therapistId == null) {
+          status = 'The alert could not be sent: you are not linked to a therapist yet.';
+        } else {
+          await _firestore.collection('crisis_events').add({
+            'patientId': patientId,
+            'therapistId': therapistId,
+            'patientName': patientName,
+            'eventType': 'sos',
+            'severity': 'critical',
+            'title': 'SOS alert',
+            'message': '$patientName pressed the SOS button and needs urgent help.',
+            'acknowledged': false,
+            'timestamp': FieldValue.serverTimestamp(),
+          }).timeout(const Duration(seconds: 10));
+          sent = true;
+          status = 'Your therapist has been alerted.';
+        }
+      }
+    } on TimeoutException {
+      status = 'The alert could not be sent right now (no connection). It will be '
+          'delivered automatically when you are back online — please call for help directly.';
+    } catch (_) {
+      status = 'The alert could not be sent. Please call for help directly.';
+    }
+    if (mounted) setState(() => _sosInProgress = false);
+
+    if (!mounted) return;
+    await _showEmergencyNumbers(status: status, sent: sent);
+  }
+
+  Future<void> _callNumber(String number) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final ok = await launchUrl(Uri(scheme: 'tel', path: number));
+      if (!ok) {
+        messenger.showSnackBar(SnackBar(content: Text('Please dial $number manually.')));
+      }
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text('Please dial $number manually.')));
+    }
+  }
+
+  Future<void> _showEmergencyNumbers({required String status, required bool sent}) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.cardDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(sent ? Icons.check_circle : Icons.error,
+                      color: sent ? AppTheme.safeGreen : AppTheme.warningAmber),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(status,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'If you are in immediate danger, call your local emergency number now.',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
+              ..._emergencyContacts.map(
+                (c) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.phone, color: AppTheme.riskRed),
+                  title: Text(c.number,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+                  subtitle: Text(c.label, style: const TextStyle(color: Colors.white60)),
+                  onTap: () => _callNumber(c.number),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+                  );
+                },
+                icon: const Icon(Icons.shield_outlined),
+                label: const Text('More safety resources'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSosButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton.icon(
+        onPressed: _sosInProgress ? null : _onSosPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.riskRed,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: AppTheme.riskRed.withValues(alpha: 0.5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        icon: _sosInProgress
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.sos),
+        label: const Text(
+          'SOS — I need help now',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+        ),
+      ),
     );
   }
 
@@ -799,7 +1078,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             children: [
               _buildGreetingCard(userData),
               const SizedBox(height: 14),
+              _buildSosButton(),
+              const SizedBox(height: 14),
               _buildStartMyDayCard(patientId),
+              const SizedBox(height: 14),
+              _buildUpcomingSessionCard(patientId),
               const SizedBox(height: 18),
               const SectionHeader(title: 'Today at a Glance', emoji: '📊'),
               Row(
@@ -816,8 +1099,6 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
               const SizedBox(height: 18),
               const SectionHeader(title: 'Quick Actions', emoji: '⚡'),
               _buildQuickActions(),
-              const SizedBox(height: 18),
-              _buildAppointmentReminder(patientId),
             ],
           ),
         );
@@ -845,6 +1126,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         backgroundColor: AppTheme.cardDark,
         title: const Text('🧠 MindTwin'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.sos, color: AppTheme.riskRed),
+            tooltip: 'SOS',
+            onPressed: _sosInProgress ? null : _onSosPressed,
+          ),
+          IconButton(
+            icon: const Icon(Icons.event),
+            tooltip: 'Sessions',
+            onPressed: _openSessions,
+          ),
           IconButton(
             icon: const Icon(Icons.smart_toy),
             tooltip: 'Ally',
@@ -913,4 +1204,10 @@ class _RiskBand {
     required this.label,
     required this.emoji,
   });
+}
+
+class _EmergencyContact {
+  final String label;
+  final String number;
+  const _EmergencyContact(this.label, this.number);
 }

@@ -1,538 +1,206 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+
 import '../../core/config/app_config.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/auth_service.dart';
-import 'patient_auth_screen.dart';
-import '../therapist/therapist_dashboard_screen.dart';
 import '../common/backend_config_screen.dart';
+import 'app_entry_screen.dart';
+import 'auth_common.dart';
 import 'password_recovery_screen.dart';
-import 'role_selection_screen.dart';
+import 'patient_auth_screen.dart';
 
+/// Therapist sign-in / sign-up. Sign-up calls `registerTherapist`; the
+/// account stays `therapist_pending` (TherapistPendingScreen) until an
+/// administrator approves it.
 class TherapistAuthScreen extends StatefulWidget {
-  const TherapistAuthScreen({super.key});
+  final String? initialMessage;
+
+  const TherapistAuthScreen({super.key, this.initialMessage});
 
   @override
   State<TherapistAuthScreen> createState() => _TherapistAuthScreenState();
 }
 
 class _TherapistAuthScreenState extends State<TherapistAuthScreen> {
-  bool isLogin = true;
-  final authService = AuthService();
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
-  final nameController = TextEditingController();
-  final licenseController = TextEditingController();
-  final question1Controller = TextEditingController();
-  final answer1Controller = TextEditingController();
-  final question2Controller = TextEditingController();
-  final answer2Controller = TextEditingController();
-  bool isLoading = false;
-  String? errorMessage;
+  final _formKey = GlobalKey<FormState>();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _name = TextEditingController();
+  final _license = TextEditingController();
+  final _specialty = TextEditingController();
+  bool _isLogin = true;
+  bool _loading = false;
+  String? _error;
 
-  Future<void> _handleAuth() async {
+  @override
+  void initState() {
+    super.initState();
+    _error = widget.initialMessage;
+  }
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    _name.dispose();
+    _license.dispose();
+    _specialty.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
+    if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() {
-      isLoading = true;
-      errorMessage = null;
+      _loading = true;
+      _error = null;
     });
-
-    try {
-      if (isLogin) {
-        // Login
-        final account = await authService.login(
-          email: emailController.text.trim(),
-          password: passwordController.text,
-        );
-
-        if (!account['success']) {
-          setState(() {
-            errorMessage = account['message'] ?? 'Invalid credentials';
-            isLoading = false;
-          });
-          return;
-        }
-
-        // Validate role
-        if (account['role'] != 'therapist') {
-          setState(() {
-            errorMessage = 'This account is not registered as a therapist';
-            isLoading = false;
-          });
-          return;
-        }
-
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const TherapistDashboardScreen()),
+    final auth = AuthService();
+    final outcome = _isLogin
+        ? await auth.login(email: _email.text, password: _password.text)
+        : await auth.signupTherapist(
+            email: _email.text,
+            password: _password.text,
+            name: _name.text.trim(),
+            licenseNumber: _license.text.trim(),
+            specialty: _specialty.text.trim(),
           );
-        }
-      } else {
-        // Signup
-        if (nameController.text.trim().isEmpty ||
-            licenseController.text.trim().isEmpty ||
-            question1Controller.text.trim().isEmpty ||
-            answer1Controller.text.trim().isEmpty ||
-            question2Controller.text.trim().isEmpty ||
-            answer2Controller.text.trim().isEmpty) {
-          setState(() {
-            errorMessage = 'All fields are required';
-            isLoading = false;
-          });
-          return;
-        }
-
-        final result = await authService.signup(
-          email: emailController.text.trim(),
-          password: passwordController.text,
-          name: nameController.text.trim(),
-          role: 'therapist',
-          securityQuestions: [
-            question1Controller.text.trim(),
-            question2Controller.text.trim(),
-          ],
-          securityAnswers: [
-            answer1Controller.text.trim(),
-            answer2Controller.text.trim(),
-          ],
-        );
-
-        if (result['success'] && mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const TherapistDashboardScreen()),
-          );
-        } else {
-          setState(() {
-            errorMessage = result['message'] ?? 'Registration failed. Email may already be in use.';
-            isLoading = false;
-          });
-        }
-      }
-    } catch (e) {
-      setState(() {
-        errorMessage = 'Error: ${e.toString()}';
-        isLoading = false;
-      });
+    if (!mounted) return;
+    // Success, or account created but the registration call failed on the
+    // network: the gate routes to home / pending / "finish registration".
+    if (outcome.success || outcome.code == 'registration-incomplete') {
+      AppEntryScreen.restart(context);
+      return;
     }
+    setState(() {
+      _loading = false;
+      _error = outcome.message ?? 'Something went wrong. Please try again.';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     if (!AppConfig.therapistAccessEnabled) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Therapist Access Disabled')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.lock_outline, size: 56, color: AppTheme.warningAmber),
-                const SizedBox(height: 12),
-                const Text(
-                  'This build is configured for patient-only access.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Build with --dart-define=APP_MODE=unified for therapist login.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (_) => const PatientAuthScreen()),
-                    );
-                  },
-                  child: const Text('Open Patient Login'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+      // Never reachable in a patient build; defensive only.
+      return const Scaffold(body: Center(child: Text('Therapist access is not available in this app.')));
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-            );
-          },
-        ),
-        actions: [
+    return AuthScaffold(
+      emoji: '🩺',
+      title: _isLogin ? 'Clinician sign in' : 'Clinician registration',
+      subtitle: _isLogin
+          ? 'Monitor your patients in real time'
+          : 'Accounts are reviewed by an administrator before activation',
+      leading: AppConfig.isUnifiedMode && Navigator.of(context).canPop()
+          ? IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).pop())
+          : const SizedBox.shrink(),
+      actions: [
+        if (kDebugMode)
           IconButton(
-            icon: const Icon(Icons.settings_rounded, color: Colors.white),
-            tooltip: 'Backend Configuration',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const BackendConfigScreen()),
-              );
-            },
+            icon: const Icon(Icons.settings_rounded),
+            tooltip: 'Backend configuration (debug)',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const BackendConfigScreen()),
+            ),
           ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppTheme.backgroundDark,
-              AppTheme.accentCyan.withValues(alpha: 0.2),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-
-                  // Header
-                  Center(
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 70,
-                          height: 70,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppTheme.accentCyan,
-                                AppTheme.accentCyan.withValues(alpha: 0.6),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: const Center(
-                            child: Text('👨‍⚕️', style: TextStyle(fontSize: 35)),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          isLogin ? 'Clinician Portal' : 'Professional Registration',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          isLogin
-                              ? 'Access your clinical dashboard'
-                              : 'Register for professional access',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            fontSize: 14,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+      ],
+      children: [
+        Form(
+          key: _formKey,
+          child: AutofillGroup(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_error != null) AuthMessageBanner(message: _error!),
+                if (!_isLogin)
+                  AuthTextField(
+                    controller: _name,
+                    label: 'Full name',
+                    hint: 'Dr. Jane Smith',
+                    icon: Icons.person_outline,
+                    textCapitalization: TextCapitalization.words,
+                    validator: AuthValidators.name,
+                    autofillHints: const [AutofillHints.name],
                   ),
-                  const SizedBox(height: 40),
-
-                  // Error message
-                  if (errorMessage != null)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.riskRed.withValues(alpha: 0.2),
-                        border: Border.all(color: AppTheme.riskRed),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      margin: const EdgeInsets.only(bottom: 16),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.warning_amber_rounded, color: Color(0xFFef4444), size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              errorMessage!,
-                              style: const TextStyle(
-                                color: Color(0xFFef4444),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // Email
-                  _buildTextField(
-                    controller: emailController,
-                    label: 'Professional Email',
-                    hint: 'clinician@practice.com',
-                    icon: Icons.email_outlined,
+                AuthTextField(
+                  controller: _email,
+                  label: 'Work email',
+                  hint: 'you@clinic.org',
+                  icon: Icons.email_outlined,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: AuthValidators.email,
+                  autofillHints: const [AutofillHints.email],
+                ),
+                AuthTextField(
+                  controller: _password,
+                  label: 'Password',
+                  hint: _isLogin ? 'Enter your password' : 'At least 8 characters incl. a number',
+                  icon: Icons.lock_outline,
+                  isPassword: true,
+                  validator: _isLogin ? AuthValidators.loginPassword : AuthValidators.newPassword,
+                  autofillHints: [_isLogin ? AutofillHints.password : AutofillHints.newPassword],
+                  textInputAction: _isLogin ? TextInputAction.done : TextInputAction.next,
+                ),
+                if (!_isLogin) ...[
+                  AuthTextField(
+                    controller: _license,
+                    label: 'License number',
+                    hint: 'Professional license / registration',
+                    icon: Icons.badge_outlined,
+                    validator: (v) => (v ?? '').trim().isEmpty ? 'License number is required' : null,
                   ),
-                  const SizedBox(height: 16),
-
-                  // Password
-                  _buildTextField(
-                    controller: passwordController,
-                    label: 'Password',
-                    hint: 'Secure password',
-                    icon: Icons.lock_outlined,
-                    isPassword: true,
-                  ),
-
-                  // Forgot password link (login only)
-                  if (isLogin)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PasswordRecoveryScreen(),
-                            ),
-                          );
-                        },
-                        child: const Text(
-                          'Forgot Password?',
-                          style: TextStyle(
-                            color: AppTheme.accentCyan,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-
-                  // Name (signup only)
-                  if (!isLogin)
-                    Column(
-                      children: [
-                        _buildTextField(
-                          controller: nameController,
-                          label: 'Full Name',
-                          hint: 'Dr. John Smith',
-                          icon: Icons.person_outlined,
-                        ),
-                        const SizedBox(height: 16),
-                        _buildTextField(
-                          controller: licenseController,
-                          label: 'License Number',
-                          hint: 'Professional license or credential',
-                          icon: Icons.badge_outlined,
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
-
-                  // Security Questions (signup only)
-                  if (!isLogin)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.accentCyan.withValues(alpha: 0.1),
-                            border: Border.all(color: AppTheme.accentCyan.withValues(alpha: 0.3)),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.security, color: AppTheme.accentCyan, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Security Questions for Account Recovery',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.9),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildTextField(
-                          controller: question1Controller,
-                          label: 'Security Question 1',
-                          hint: 'What was the name of your first pet?',
-                          icon: Icons.help_outline,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildTextField(
-                          controller: answer1Controller,
-                          label: 'Answer 1',
-                          hint: 'Your answer',
-                          icon: Icons.vpn_key_outlined,
-                        ),
-                        const SizedBox(height: 16),
-                        _buildTextField(
-                          controller: question2Controller,
-                          label: 'Security Question 2',
-                          hint: 'What city were you born in?',
-                          icon: Icons.help_outline,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildTextField(
-                          controller: answer2Controller,
-                          label: 'Answer 2',
-                          hint: 'Your answer',
-                          icon: Icons.vpn_key_outlined,
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
-
-                  // Submit button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: isLoading ? null : _handleAuth,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentCyan,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: isLoading
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Text(
-                              isLogin ? 'Sign In' : 'Register',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Toggle login/signup
-                  Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          isLogin
-                              ? "Need professional access? "
-                              : 'Already registered? ',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 14,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              isLogin = !isLogin;
-                              errorMessage = null;
-                            });
-                          },
-                          child: Text(
-                            isLogin ? 'Register' : 'Sign In',
-                            style: const TextStyle(
-                              color: AppTheme.accentCyan,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  AuthTextField(
+                    controller: _specialty,
+                    label: 'Specialty (optional)',
+                    hint: 'e.g. CBT, adolescent care',
+                    icon: Icons.psychology_outlined,
+                    textInputAction: TextInputAction.done,
                   ),
                 ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    bool isPassword = false,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.9),
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.1),
-            ),
-          ),
-          child: TextField(
-            controller: controller,
-            obscureText: isPassword,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 14,
-              ),
-              prefixIcon: Icon(icon, color: AppTheme.accentCyan, size: 20),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
-              ),
+                if (_isLogin)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PasswordRecoveryScreen(initialEmail: _email.text.trim()),
+                        ),
+                      ),
+                      child: const Text('Forgot password?', style: TextStyle(color: AppTheme.primaryIndigo)),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                AuthPrimaryButton(
+                  label: _isLogin ? 'Sign in' : 'Request account',
+                  loading: _loading,
+                  onPressed: _submit,
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _loading
+                      ? null
+                      : () => setState(() {
+                            _isLogin = !_isLogin;
+                            _error = null;
+                          }),
+                  child: Text(_isLogin ? 'New clinician? Request an account' : 'Already registered? Sign in'),
+                ),
+                if (AppConfig.isUnifiedMode)
+                  TextButton(
+                    onPressed: () => Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PatientAuthScreen()),
+                    ),
+                    child: const Text('Patient login (debug unified build)'),
+                  ),
+              ],
             ),
           ),
         ),
       ],
     );
-  }
-
-  @override
-  void dispose() {
-    emailController.dispose();
-    passwordController.dispose();
-    nameController.dispose();
-    licenseController.dispose();
-    question1Controller.dispose();
-    answer1Controller.dispose();
-    question2Controller.dispose();
-    answer2Controller.dispose();
-    super.dispose();
   }
 }

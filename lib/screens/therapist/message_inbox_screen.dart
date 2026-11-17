@@ -1,12 +1,14 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:async';
+import 'package:intl/intl.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../services/chat_service.dart';
-import '../../services/database_service.dart';
-import '../../services/auth_service.dart';
 import '../chat/chat_screen.dart';
 
+/// Therapist inbox, built live from Firestore on every platform:
+/// `chats where participants array-contains myUid orderBy lastMessageAt desc`.
 class MessageInboxScreen extends StatefulWidget {
   const MessageInboxScreen({super.key});
 
@@ -15,206 +17,128 @@ class MessageInboxScreen extends StatefulWidget {
 }
 
 class _MessageInboxScreenState extends State<MessageInboxScreen> {
-  late final DatabaseService _dbService;
-  late final AuthService _authService;
-  StreamSubscription<List<Map<String, dynamic>>>? _cloudSub;
+  String? _myUid;
+  Stream<List<ChatThread>>? _stream;
 
-  List<Map<String, dynamic>> _patientThreads = [];
-  Map<String, int> _unreadCounts = {};
-  bool _isLoading = true;
+  /// Fallback names for chats whose `names` map lacks the other participant
+  /// (legacy chats). Looked up once per uid from users/{uid}.
+  final Map<String, Future<String?>> _nameLookups = {};
 
   @override
   void initState() {
     super.initState();
-    _dbService = DatabaseService();
-    _authService = AuthService();
-    _loadThreads();
-    _startRealtimeUpdates();
+    _myUid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = _myUid;
+    if (uid != null) _stream = ChatService().inboxStream(uid);
   }
 
-  Future<void> _loadThreads() async {
-    try {
-      final therapistId = _authService.currentUserId;
-      if (therapistId == null) return;
-
-      if (kIsWeb) {
-        // On web, threads come from Firestore chats directly.
-        final cloudThreads = await ChatService().fetchInbox(therapistId);
-        final unreadMap = <String, int>{
-          for (final t in cloudThreads)
-            (t['patientId'] as String): (t['unreadCount'] as int? ?? 0),
-        };
-        if (mounted) {
-          setState(() {
-            _patientThreads = cloudThreads;
-            _unreadCounts = unreadMap;
-            _isLoading = false;
-          });
-        }
-        return;
+  Future<String?> _lookupName(String uid) {
+    return _nameLookups.putIfAbsent(uid, () async {
+      try {
+        final doc =
+            await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        final name = doc.data()?['name']?.toString().trim();
+        return (name == null || name.isEmpty) ? null : name;
+      } catch (_) {
+        return null;
       }
-
-      // Get all patients (local SQLite on mobile)
-      final patients = await _dbService.getAllPatients();
-      final threads = <Map<String, dynamic>>[];
-      final unreadMap = <String, int>{};
-
-      for (final patient in patients) {
-        // Get last message from local SQLite (mobile)
-        final messages = await _dbService.getConversation(therapistId, patient.id);
-        if (messages.isNotEmpty) {
-          final lastMessage = messages.last;
-          
-          // Count unread messages from patient
-          final unreadCount = messages
-              .where((m) => m['senderId'] == patient.id && m['status'] != 'read')
-              .length;
-          
-          unreadMap[patient.id] = unreadCount;
-          
-          // Get last message sent by therapist to this patient for read status
-          final lastTherapistMessage = messages
-              .where((m) => m['senderId'] == therapistId)
-              .toList()
-              .reversed
-              .firstWhere(
-                (m) => true,
-                orElse: () => <String, dynamic>{},
-              );
-          
-          final lastTherapistRead = ((lastTherapistMessage['is_read'] ??
-                  lastTherapistMessage['isRead'] ??
-                  0) as num?)
-              ?.toInt() ??
-              0;
-          
-          threads.add({
-            'patientId': patient.id,
-            'patientName': patient.name,
-            'patientEmail': patient.email,
-            'lastMessage': (lastMessage['body'] ?? '').toString(),
-            'lastMessageTime': DateTime.parse(
-              (lastMessage['timestamp'] ?? DateTime.now().toIso8601String()).toString(),
-            ),
-            'messageCount': messages.length,
-            'lastTherapistMessageRead': lastTherapistRead == 1,
-          });
-        }
-      }
-
-      // Sort by last message time
-      threads.sort((a, b) => 
-        (b['lastMessageTime'] as DateTime).compareTo(a['lastMessageTime'] as DateTime)
-      );
-
-      if (mounted) {
-        setState(() {
-          _patientThreads = threads;
-          _unreadCounts = unreadMap;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('Error loading threads: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  /// Subscribe to the Firestore conversation feed instead of polling. New
-  /// messages update the parent `chats/{conversationId}` document, which
-  /// re-emits the inbox and triggers a reload (reusing the SQLite/cloud
-  /// load logic on each platform).
-  void _startRealtimeUpdates() {
-    final therapistId = _authService.currentUserId;
-    if (therapistId == null) return;
-    _cloudSub = ChatService()
-        .inboxStream(therapistId)
-        .listen((threads) {
-          _loadThreads();
-        }, onError: (e) {
-          print('Inbox stream error: $e');
-        });
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('💬 Message Inbox'),
+        title: const Text('Message Inbox'),
         backgroundColor: AppTheme.cardDark,
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
-          : _patientThreads.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.mail_outline,
-                        size: 64,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No messages yet',
-                        style: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _patientThreads.length,
-                  itemBuilder: (context, index) {
-                    final thread = _patientThreads[index];
-                    final unreadCount = _unreadCounts[thread['patientId']] ?? 0;
-                    
-                    return _buildThreadTile(
-                      thread: thread,
-                      unreadCount: unreadCount,
-                      onTap: () => _openChat(thread),
-                    );
-                  },
-                ),
+      body: _stream == null
+          ? _buildMessage(Icons.lock_outline, 'Please sign in to view messages')
+          : StreamBuilder<List<ChatThread>>(
+              stream: _stream,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  debugPrint('Inbox stream error: ${snapshot.error}');
+                  return _buildMessage(
+                    Icons.error_outline,
+                    'Unable to load messages.\n${snapshot.error}',
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final threads = snapshot.data!;
+                if (threads.isEmpty) {
+                  return _buildMessage(Icons.mail_outline, 'No messages yet');
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: threads.length,
+                  itemBuilder: (context, index) =>
+                      _buildThreadTile(threads[index]),
+                );
+              },
+            ),
     );
   }
 
-  Widget _buildThreadTile({
-    required Map<String, dynamic> thread,
-    required int unreadCount,
-    required VoidCallback onTap,
-  }) {
-    final lastTherapistRead = thread['lastTherapistMessageRead'] as bool? ?? false;
-    
+  Widget _buildMessage(IconData icon, String text) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 64, color: Colors.grey[600]),
+            const SizedBox(height: 16),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[400], fontSize: 16),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThreadTile(ChatThread thread) {
+    final known = thread.otherUserName;
+    if (known != null) return _threadTile(thread, known);
+    return FutureBuilder<String?>(
+      future: _lookupName(thread.otherUserId),
+      builder: (context, snap) =>
+          _threadTile(thread, snap.data ?? 'Patient'),
+    );
+  }
+
+  Widget _threadTile(ChatThread thread, String name) {
+    final unread = thread.unreadForMe;
+    final lastIsMine = thread.lastSenderId == _myUid;
+    final preview =
+        lastIsMine ? 'You: ${thread.lastMessage}' : thread.lastMessage;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         border: Border.all(
-          color: unreadCount > 0 
+          color: unread > 0
               ? AppTheme.primaryIndigo.withValues(alpha: 0.5)
               : Colors.grey[700]!,
-          width: unreadCount > 0 ? 2 : 1,
+          width: unread > 0 ? 2 : 1,
         ),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onTap,
+          onTap: () => _openChat(thread, name),
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Avatar
                 Container(
                   width: 56,
                   height: 56,
@@ -224,7 +148,7 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                   ),
                   child: Center(
                     child: Text(
-                      (thread['patientName'] as String)[0].toUpperCase(),
+                      name.isNotEmpty ? name[0].toUpperCase() : '?',
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -234,7 +158,6 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,93 +166,56 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              thread['patientName'] as String,
+                              name,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 15,
-                                fontWeight: unreadCount > 0 
-                                    ? FontWeight.bold 
+                                fontWeight: unread > 0
+                                    ? FontWeight.bold
                                     : FontWeight.w600,
                                 color: Colors.white,
                               ),
                             ),
                           ),
-                          // Read receipt indicator
-                          Row(
-                            children: [
-                              if (lastTherapistRead)
-                                const Row(
-                                  children: [
-                                    Icon(Icons.check_circle,
-                                        size: 14,
-                                        color: AppTheme.safeGreen),
-                                    SizedBox(width: 4),
-                                    Text('Read',
-                                        style: TextStyle(
-                                          color: AppTheme.safeGreen,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                        )),
-                                  ],
-                                )
-                              else
-                                Row(
-                                  children: [
-                                    Icon(Icons.circle_outlined,
-                                        size: 14,
-                                        color: Colors.white.withValues(alpha: 0.4)),
-                                    const SizedBox(width: 4),
-                                    Text('Sent',
-                                        style: TextStyle(
-                                          color: Colors.white.withValues(alpha: 0.5),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                        )),
-                                  ],
+                          if (lastIsMine) _buildReceipt(thread),
+                          if (unread > 0) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryIndigo,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                unread > 99 ? '99+' : unread.toString(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                              if (unreadCount > 0) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.primaryIndigo,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    unreadCount.toString(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        (thread['lastMessage'] as String).length > 60
-                            ? '${(thread['lastMessage'] as String).substring(0, 60)}...'
-                            : thread['lastMessage'] as String,
+                        preview,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white.withValues(alpha: 
-                            unreadCount > 0 ? 0.8 : 0.6,
-                          ),
+                          color: Colors.white
+                              .withValues(alpha: unread > 0 ? 0.85 : 0.6),
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _formatTime(thread['lastMessageTime'] as DateTime),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[500],
-                        ),
+                        _formatTime(thread.lastMessageAt),
+                        style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                       ),
                     ],
                   ),
@@ -347,44 +233,54 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
     );
   }
 
-  void _openChat(Map<String, dynamic> thread) {
+  /// "Read" once the patient's unread counter is back to 0.
+  Widget _buildReceipt(ChatThread thread) {
+    final read = thread.unreadForOther == 0;
+    final color =
+        read ? AppTheme.safeGreen : Colors.white.withValues(alpha: 0.5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(read ? Icons.done_all_rounded : Icons.done_rounded,
+            size: 14, color: color),
+        const SizedBox(width: 4),
+        Text(
+          read ? 'Read' : 'Sent',
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openChat(ChatThread thread, String name) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (context) => ChatScreen(
-          otherUserId: thread['patientId'] as String,
-          otherUserName: thread['patientName'] as String,
+          otherUserId: thread.otherUserId,
+          otherUserName: name,
           isTherapist: true,
         ),
       ),
-    ).then((_) {
-      // Reload threads after chat closes
-      _loadThreads();
-    });
+    );
   }
 
-  String _formatTime(DateTime dateTime) {
+  String _formatTime(DateTime? dateTime) {
+    if (dateTime == null) return 'Sending…';
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-
-    if (difference.inMinutes < 1) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays == 1) {
-      return 'Yesterday';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return '${dateTime.month}/${dateTime.day}';
+    if (difference.inMinutes < 1) return 'Just now';
+    if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+    if (dateTime.year == now.year &&
+        dateTime.month == now.month &&
+        dateTime.day == now.day) {
+      return DateFormat.jm().format(dateTime);
     }
-  }
-
-  @override
-  void dispose() {
-    _cloudSub?.cancel();
-    super.dispose();
+    if (difference.inDays < 7) return DateFormat.E().add_jm().format(dateTime);
+    return DateFormat.yMMMd().format(dateTime);
   }
 }

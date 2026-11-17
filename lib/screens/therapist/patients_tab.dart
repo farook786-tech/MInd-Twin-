@@ -59,10 +59,13 @@ class _PatientsTabState extends State<PatientsTab> {
                   .toList();
 
           if (snapshot.hasError && patients.isEmpty) {
-            return const _CenteredInfo(
+            final error = snapshot.error;
+            return _CenteredInfo(
               icon: Icons.error_outline_rounded,
               title: 'Unable To Load Patients',
-              subtitle: 'No patient data is available right now.',
+              subtitle: error is FirebaseException && error.code == 'permission-denied'
+                  ? 'Permission denied. Confirm your therapist account is approved, then sign out and back in.'
+                  : 'Patient roster could not be loaded: ${error ?? 'unknown error'}',
               tint: AppTheme.riskRed,
             );
           }
@@ -100,7 +103,6 @@ class _PatientsTabState extends State<PatientsTab> {
               Expanded(
                 child: filtered.isEmpty
                     ? _buildEmptyState(
-                        therapistId: therapistId,
                         hasAnyPatient: patients.isNotEmpty,
                       )
                     : ListView.builder(
@@ -133,21 +135,6 @@ class _PatientsTabState extends State<PatientsTab> {
                                 ),
                               );
                             },
-                            onAlert: () async {
-                              await _createUrgentAlert(
-                                therapistId: therapistId,
-                                patientId: patient.id,
-                                patientName: patient.name,
-                                riskScore: patient.riskPercent,
-                              );
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Urgent alert has been created.'),
-                                  backgroundColor: AppTheme.riskRed,
-                                ),
-                              );
-                            },
                           );
                         },
                       ),
@@ -160,7 +147,6 @@ class _PatientsTabState extends State<PatientsTab> {
   }
 
   Widget _buildEmptyState({
-    required String therapistId,
     required bool hasAnyPatient,
   }) {
     if (hasAnyPatient && _search.trim().isNotEmpty) {
@@ -196,65 +182,18 @@ class _PatientsTabState extends State<PatientsTab> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Share your therapist ID with patients',
+              'Patients link to you with your invite code. Find it on the Dashboard tab '
+              '("Your invite code") and share it with your patient.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 13,
               ),
             ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppTheme.backgroundDark,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    'Therapist ID',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    therapistId,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
     );
-  }
-
-  Future<void> _createUrgentAlert({
-    required String therapistId,
-    required String patientId,
-    required String patientName,
-    required double riskScore,
-  }) async {
-    await FirebaseFirestore.instance.collection('crisis_events').add({
-      'therapistId': therapistId,
-      'patientId': patientId,
-      'patientName': patientName,
-      'severity': riskScore >= 75 ? 'critical' : 'high',
-      'matchedPhrases': ['Manual therapist escalation'],
-      'notes': 'Urgent therapist alert initiated from Patients tab.',
-      'acknowledged': false,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
   }
 }
 
@@ -336,19 +275,20 @@ class _PatientCard extends StatelessWidget {
   final _PatientUI patient;
   final VoidCallback onViewDetails;
   final VoidCallback onMessage;
-  final VoidCallback onAlert;
 
   const _PatientCard({
     required this.patient,
     required this.onViewDetails,
     required this.onMessage,
-    required this.onAlert,
   });
 
   @override
   Widget build(BuildContext context) {
-    final riskColor = _riskColor(patient.riskPercent);
-    final riskLabel = _riskLabel(patient.riskPercent);
+    final risk = patient.riskPercent;
+    final riskColor = risk == null ? Colors.white54 : _riskColor(risk);
+    final riskText = risk == null
+        ? 'Risk: no check-in data yet'
+        : 'Risk: ${risk.toStringAsFixed(0)}% ${_riskLabel(risk)} ${_riskEmoji(risk)}';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -391,7 +331,7 @@ class _PatientCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Risk: ${patient.riskPercent.toStringAsFixed(0)}% $riskLabel ${_riskEmoji(patient.riskPercent)}',
+                      riskText,
                       style: TextStyle(
                         color: riskColor,
                         fontSize: 13,
@@ -415,6 +355,24 @@ class _PatientCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
+                    // Live smartwatch heart rate (users.latestVitals, kept current by the
+                    // onVitalCreated Cloud Function), coloured against this patient's thresholds.
+                    Text(
+                      patient.heartRate == null
+                          ? '❤ No watch data yet'
+                          : '❤ ${patient.heartRate!.round()} bpm · ${patient.heartRateRelative}'
+                              '${patient.heartRateStale ? ' (watch not syncing)' : ''}',
+                      style: TextStyle(
+                        color: patient.heartRate == null || patient.heartRateStale
+                            ? Colors.white.withValues(alpha: 0.5)
+                            : patient.heartRateOutOfRange
+                                ? AppTheme.riskRed
+                                : AppTheme.safeGreen,
+                        fontSize: 12,
+                        fontWeight: patient.heartRateOutOfRange ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
                     Text(
                       'Streak: 🔥 ${patient.streak} days',
                       style: TextStyle(
@@ -435,7 +393,6 @@ class _PatientCard extends StatelessWidget {
             children: [
               _ActionBtn(label: 'View Details', onTap: onViewDetails),
               _ActionBtn(label: 'Message', onTap: onMessage),
-              _ActionBtn(label: 'Alert', onTap: onAlert, tint: AppTheme.riskRed),
             ],
           ),
         ],
@@ -447,17 +404,15 @@ class _PatientCard extends StatelessWidget {
 class _ActionBtn extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-  final Color? tint;
 
   const _ActionBtn({
     required this.label,
     required this.onTap,
-    this.tint,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = tint ?? AppTheme.primaryIndigo;
+    const color = AppTheme.primaryIndigo;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -544,11 +499,15 @@ class _CenteredInfo extends StatelessWidget {
 class _PatientUI {
   final String id;
   final String name;
-  final double riskPercent;
+  final double? riskPercent;
   final String latestMood;
   final String lastCheckInRelative;
   final int streak;
   final DateTime sortingTime;
+  final double? heartRate;
+  final String heartRateRelative;
+  final bool heartRateStale;
+  final bool heartRateOutOfRange;
 
   const _PatientUI({
     required this.id,
@@ -558,27 +517,50 @@ class _PatientUI {
     required this.lastCheckInRelative,
     required this.streak,
     required this.sortingTime,
+    this.heartRate,
+    this.heartRateRelative = '',
+    this.heartRateStale = false,
+    this.heartRateOutOfRange = false,
   });
 }
+
+/// Same defaults as functions/src/logic/vitals.js and PatientVitalsPanel.
+const double _defaultHrHigh = 120;
+const double _defaultHrLow = 45;
+const Duration _vitalsStaleAfter = Duration(hours: 2);
 
 List<_PatientUI> _dedupeAndSortPatients(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
   final map = <String, _PatientUI>{};
 
   for (final doc in docs) {
     final data = doc.data();
-    final id = _safeString(data['uid'], fallback: _safeString(data['patientId'], fallback: doc.id));
+    // users/{uid}: the document id IS the patient uid.
+    final id = doc.id;
     final name = _safeString(data['name'], fallback: 'Unnamed Patient');
     final risk = _riskPercent(data);
-    final checkInDate = _readDate(data['lastCheckInDate']) ?? _readDate(data['timestamp']) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final checkInDate = _readDate(data['lastCheckInAt']) ?? _readDate(data['lastCheckInDate']);
+
+    final vitals = data['latestVitals'];
+    final hr = vitals is Map ? vitals['heartRate'] : null;
+    final hrValue = hr is Map ? _toDouble(hr['value']) : null;
+    final hrAt = hr is Map ? _readDate(hr['measuredAt']) : null;
+    final thresholds = data['vitalThresholds'];
+    final hrHigh = (thresholds is Map ? _toDouble(thresholds['heartRateHigh']) : null) ?? _defaultHrHigh;
+    final hrLow = (thresholds is Map ? _toDouble(thresholds['heartRateLow']) : null) ?? _defaultHrLow;
+    final hrStale = hrAt == null || DateTime.now().difference(hrAt) > _vitalsStaleAfter;
 
     final item = _PatientUI(
       id: id,
       name: name,
       riskPercent: risk,
       latestMood: _safeString(data['latestMood'], fallback: 'Unknown'),
-      lastCheckInRelative: _relativeTime(checkInDate),
+      lastCheckInRelative: checkInDate == null ? 'Never' : _relativeTime(checkInDate),
       streak: _readInt(data['streak']),
-      sortingTime: checkInDate,
+      sortingTime: checkInDate ?? DateTime.fromMillisecondsSinceEpoch(0),
+      heartRate: hrValue,
+      heartRateRelative: hrAt == null ? '' : _relativeTime(hrAt),
+      heartRateStale: hrValue != null && hrStale,
+      heartRateOutOfRange: hrValue != null && !hrStale && (hrValue > hrHigh || hrValue < hrLow),
     );
 
     final old = map[id];
@@ -589,7 +571,12 @@ List<_PatientUI> _dedupeAndSortPatients(List<QueryDocumentSnapshot<Map<String, d
 
   final items = map.values.toList()
     ..sort((a, b) {
-      final riskCmp = b.riskPercent.compareTo(a.riskPercent);
+      // A live out-of-range heart rate is the most urgent signal: list those first.
+      if (a.heartRateOutOfRange != b.heartRateOutOfRange) {
+        return a.heartRateOutOfRange ? -1 : 1;
+      }
+      // Then highest risk; patients without a score sort after scored ones.
+      final riskCmp = (b.riskPercent ?? -1).compareTo(a.riskPercent ?? -1);
       if (riskCmp != 0) return riskCmp;
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
@@ -617,17 +604,10 @@ DateTime? _readDate(dynamic value) {
   return null;
 }
 
-double _riskPercent(Map<String, dynamic> data) {
-  final raw = data['latestRiskScore'] ?? data['riskScore'] ?? data['risk'];
-  final asNum = _toDouble(raw);
-  if (asNum == null) {
-    final wellbeing = _toDouble(data['wellbeingScore']);
-    if (wellbeing != null) {
-      return (100 - wellbeing).clamp(0.0, 100.0);
-    }
-    return 0;
-  }
-  if (asNum <= 1) return (asNum * 100).clamp(0.0, 100.0);
+/// users.latestRiskScore on the contract's 0-100 scale; null if never scored.
+double? _riskPercent(Map<String, dynamic> data) {
+  final asNum = _toDouble(data['latestRiskScore']);
+  if (asNum == null || asNum.isNaN) return null;
   return asNum.clamp(0.0, 100.0);
 }
 

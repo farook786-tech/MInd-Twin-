@@ -553,7 +553,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                 (log) => pw.Padding(
                   padding: const pw.EdgeInsets.only(bottom: 6),
                   child: pw.Text(
-                    '${log.date}: mood ${log.moodScore.toStringAsFixed(1)}, anxiety ${log.anxietyLevel.toStringAsFixed(1)}, sleep ${log.sleepHours.toStringAsFixed(1)}h, wellbeing ${log.wellbeingScore.toStringAsFixed(1)}',
+                    '${log.date}: mood ${log.moodScore?.toStringAsFixed(1) ?? '—'}, anxiety ${log.anxietyLevel?.toStringAsFixed(1) ?? '—'}, sleep ${log.sleepHours != null ? '${log.sleepHours!.toStringAsFixed(1)}h' : '—'}, wellbeing ${log.wellbeingScore?.toStringAsFixed(1) ?? '—'}',
                   ),
                 ),
               ),

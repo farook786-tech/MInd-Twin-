@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class Patient {
   final String id;
   final String name;
@@ -13,6 +15,15 @@ class Patient {
   final int missedSessions;
   final bool isDemo;
 
+  /// Raw `users.latestRiskScore` (0..100); null when never scored.
+  final double? latestRiskScore;
+
+  /// Raw `users.latestWellbeingScore` (0..100); null when never scored.
+  final double? latestWellbeingScore;
+
+  /// `users.lastCheckInAt`; null when the patient never checked in.
+  final DateTime? lastCheckInAt;
+
   Patient({
     required this.id,
     required this.name,
@@ -27,6 +38,9 @@ class Patient {
     required this.lastCheckIn,
     this.missedSessions = 0,
     this.isDemo = false,
+    this.latestRiskScore,
+    this.latestWellbeingScore,
+    this.lastCheckInAt,
   });
 
   // JSON Serialization
@@ -89,22 +103,38 @@ class Patient {
     );
   }
 
-  // Demo Patient: James K. - 91% risk, 3 missed sessions, declining mood
-  factory Patient.demoJamesK() {
+  /// Build from a Firestore `users/{uid}` document using the contract
+  /// fields (docs/DATA_MODEL.md). Risk stays on the legacy 0..1 scale in
+  /// [riskScore]/[currentRiskScore] for older widgets; [latestRiskScore]
+  /// keeps the raw 0..100 value and is null when the patient was never scored
+  /// (never fabricated). [lastCheckInAt] is null when there is no check-in.
+  factory Patient.fromFirestore(String uid, Map<String, dynamic> data, {String fallbackName = ''}) {
+    double? toDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
+    DateTime? toDate(dynamic v) {
+      if (v is Timestamp) return v.toDate();
+      if (v is DateTime) return v;
+      if (v is String) return DateTime.tryParse(v);
+      return null;
+    }
+
+    final latestRisk = toDouble(data['latestRiskScore'])?.clamp(0.0, 100.0).toDouble();
+    final wellbeing = toDouble(data['latestWellbeingScore'])?.clamp(0.0, 100.0).toDouble();
+    final lastCheckInAt = toDate(data['lastCheckInAt']) ?? toDate(data['lastCheckInDate']);
+    final name = (data['name'] ?? '').toString().trim();
     return Patient(
-      id: 'demo_james_k',
-      name: 'James K.',
-      email: 'james.k@demo.mindtwin.ai',
-      age: 34,
-      therapistId: 'therapist_001',
-      currentRiskScore: 0.91,
-      riskScore: 0.91,
-      wellbeingScore: 25.0,
-      lastUpdated: DateTime.now().toIso8601String(),
-      createdAt: DateTime.now().subtract(const Duration(days: 180)),
-      lastCheckIn: DateTime.now().subtract(const Duration(days: 5)),
-      missedSessions: 3,
-      isDemo: true,
+      id: uid,
+      name: name.isNotEmpty ? name : fallbackName,
+      email: (data['email'] ?? '').toString(),
+      age: int.tryParse(data['age']?.toString() ?? '') ?? 0,
+      therapistId: data['therapistId']?.toString(),
+      currentRiskScore: (latestRisk ?? 0) / 100.0,
+      riskScore: (latestRisk ?? 0) / 100.0,
+      wellbeingScore: wellbeing ?? 50.0,
+      createdAt: toDate(data['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      lastCheckIn: lastCheckInAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+      latestRiskScore: latestRisk,
+      latestWellbeingScore: wellbeing,
+      lastCheckInAt: lastCheckInAt,
     );
   }
 
@@ -127,6 +157,12 @@ class Patient {
       age: age ?? this.age,
       therapistId: therapistId ?? this.therapistId,
       currentRiskScore: currentRiskScore ?? this.currentRiskScore,
+      riskScore: riskScore,
+      wellbeingScore: wellbeingScore,
+      lastUpdated: lastUpdated,
+      latestRiskScore: latestRiskScore,
+      latestWellbeingScore: latestWellbeingScore,
+      lastCheckInAt: lastCheckInAt,
       createdAt: createdAt ?? this.createdAt,
       lastCheckIn: lastCheckIn ?? this.lastCheckIn,
       missedSessions: missedSessions ?? this.missedSessions,

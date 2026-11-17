@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -7,8 +8,9 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
-import '../../services/ml_risk_service.dart';
+import '../../services/patient_crisis_reporter.dart';
 import 'my_twin_screen.dart';
+import 'safety_resources_screen.dart';
 
 class PHQ9AssessmentScreen extends StatefulWidget {
   const PHQ9AssessmentScreen({super.key});
@@ -20,7 +22,6 @@ class PHQ9AssessmentScreen extends StatefulWidget {
 class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
-  final MlRiskService _mlRiskService = MlRiskService();
 
   static const List<_AssessmentQuestion> _questions = <_AssessmentQuestion>[
     _AssessmentQuestion(
@@ -130,14 +131,19 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
 
   int get _selectedScore => _answers[_currentIndex] ?? -1;
 
-  Future<String> _resolveTherapistId(String patientId) async {
-    try {
-      final userDoc = await _firestore.collection('users').doc(patientId).get();
-      final data = userDoc.data() ?? <String, dynamic>{};
-      return (data['therapistId'] ?? data['assignedTherapist'] ?? '').toString();
-    } catch (_) {
-      return '';
-    }
+  String _phqSeverity(int score) {
+    if (score >= 20) return 'severe';
+    if (score >= 15) return 'moderately_severe';
+    if (score >= 10) return 'moderate';
+    if (score >= 5) return 'mild';
+    return 'minimal';
+  }
+
+  String _gadSeverity(int score) {
+    if (score >= 15) return 'severe';
+    if (score >= 10) return 'moderate';
+    if (score >= 5) return 'mild';
+    return 'minimal';
   }
 
   String _phqInterpretation(int score) {
@@ -155,6 +161,15 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
     return 'Minimal anxiety symptoms';
   }
 
+  /// Saves the assessment ONCE to Firestore. Firestore persists the write in
+  /// its offline queue immediately and syncs it when online, so there is no
+  /// second (SQLite) queue - that previously produced duplicate assessments
+  /// (and duplicate server-side crisis alerts) after a timeout.
+  ///
+  /// Cloud Function onAssessmentCreated reads `totalScore` (PHQ-9 total),
+  /// `item9` (PHQ-9 question 9, 0-3) and `phq9Answers` and raises the
+  /// automatic crisis event (total >= 20 or item9 > 0). The client does NOT
+  /// write that crisis event itself, to avoid duplicates.
   Future<void> _submitAssessment() async {
     if (_isSubmitting) return;
 
@@ -166,51 +181,87 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
       );
       return;
     }
+    if (_answers.any((a) => a == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please answer every question before submitting.')),
+      );
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
     });
 
-    final phqAnswers = _answers.take(9).map((v) => v ?? 0).toList();
-    final gadAnswers = _answers.skip(9).map((v) => v ?? 0).toList();
+    final phqAnswers = _answers.take(9).map((v) => v!).toList();
+    final gadAnswers = _answers.skip(9).map((v) => v!).toList();
     final phq9Score = phqAnswers.fold<int>(0, (a, b) => a + b);
     final gad7Score = gadAnswers.fold<int>(0, (a, b) => a + b);
+    final item9 = phqAnswers[8];
 
-    final therapistId = await _resolveTherapistId(patientId);
+    // Server-owned therapistId (never '' / never a name). Unlinked -> null.
+    final therapistId = await _authService.loadTherapistId();
 
+    final ref = _firestore.collection('clinical_assessments').doc();
+
+    // PHQ-9 item 9 > 0 (thoughts of being better off dead / self-harm):
+    // alert the therapist BEFORE saving, also when offline (the write is
+    // queued). Deterministic id `assessment_<assessmentId>` so the Cloud
+    // Function's idempotent write for the same assessment merges with it.
+    CrisisReportStatus? item9Status;
+    if (item9 > 0) {
+      item9Status = await PatientCrisisReporter.report(
+        eventType: 'phq9_severe',
+        severity: item9 >= 2 ? 'critical' : 'high',
+        title: 'PHQ-9 item 9: thoughts of death or self-harm',
+        message: 'Patient answered "${_answerOptions[item9].label}" to PHQ-9 item 9 '
+            '(thoughts that they would be better off dead or of hurting themselves). '
+            'PHQ-9 total: $phq9Score.',
+        source: 'phq9_assessment',
+        details: {'assessmentId': ref.id, 'item9': item9, 'totalScore': phq9Score},
+        docId: 'assessment_${ref.id}',
+      );
+    }
+
+    var queuedOffline = false;
     String? errorMessage;
     try {
-      await _firestore.collection('clinical_assessments').add({
+      final write = ref.set({
         'patientId': patientId,
         'therapistId': therapistId,
-        'phq9Score': phq9Score,
+        'type': 'phq9_gad7',
+        'totalScore': phq9Score,
+        'item9': item9,
+        'phq9Answers': phqAnswers,
+        'phq9Severity': _phqSeverity(phq9Score),
+        'phq9Score': phq9Score, // legacy name kept for older readers
         'gad7Score': gad7Score,
+        'gad7Answers': gadAnswers,
+        'gad7Severity': _gadSeverity(gad7Score),
         'answers': {
           'phq9': phqAnswers,
           'gad7': gadAnswers,
         },
         'timestamp': FieldValue.serverTimestamp(),
-        'type': 'phq9_gad7',
-      }).timeout(const Duration(seconds: 30));
-
-      RiskPrediction? riskPrediction;
+        'clientCreatedAt': Timestamp.now(),
+      });
       try {
-        riskPrediction = await _mlRiskService.predictRisk(patientId);
-      } catch (e) {
-        debugPrint('Risk prediction failed after PHQ-9: $e');
+        await write.timeout(const Duration(seconds: 10));
+      } on TimeoutException {
+        queuedOffline = true;
+        unawaited(write.catchError((Object e) => debugPrint('Queued assessment failed: $e')));
       }
 
-      await _firestore.collection('users').doc(patientId).set({
-        'phq9Score': phq9Score,
-        'gad7Score': gad7Score,
-        'latestPhq9Score': phq9Score,
-        'latestGad7Score': gad7Score,
-        'latestAssessmentAt': FieldValue.serverTimestamp(),
-        if (riskPrediction != null) 'latestRiskScore': riskPrediction.riskScore,
-        if (riskPrediction != null) 'latestRiskLevel': riskPrediction.riskLevel,
-      }, SetOptions(merge: true)).timeout(const Duration(seconds: 30));
+      // Patient snapshot: latest PHQ-9 only. latestRiskScore is owned by the
+      // daily check-in and is NOT overwritten here.
+      unawaited(_firestore.collection('users').doc(patientId).set({
+        'latestPhq9': {
+          'total': phq9Score,
+          'severity': _phqSeverity(phq9Score),
+          'at': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true)).catchError((Object e) => debugPrint('PHQ-9 snapshot update failed: $e')));
 
-      await _flushPendingAssessments();
+      if (!queuedOffline) await _flushLegacyPendingAssessments();
 
       if (!mounted) return;
       setState(() {
@@ -218,93 +269,112 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
         _gad7Score = gad7Score;
         _isComplete = true;
       });
-    } on TimeoutException {
-      errorMessage = 'Connection timeout. Your answers were saved offline and will sync automatically.';
-      await _saveAssessmentOffline(
-        patientId: patientId,
-        therapistId: therapistId,
-        phq9Score: phq9Score,
-        gad7Score: gad7Score,
-        phqAnswers: phqAnswers,
-        gadAnswers: gadAnswers,
-      );
+      if (queuedOffline) {
+        errorMessage = 'You are offline. Your answers are saved on this device and will sync automatically.';
+      }
     } catch (error) {
-      errorMessage = 'Assessment save failed. Your answers were saved offline and will sync automatically.';
-      await _saveAssessmentOffline(
-        patientId: patientId,
-        therapistId: therapistId,
-        phq9Score: phq9Score,
-        gad7Score: gad7Score,
-        phqAnswers: phqAnswers,
-        gadAnswers: gadAnswers,
-      );
+      debugPrint('Assessment save failed: $error');
+      errorMessage = 'Your assessment could not be saved ($error). Please try again.';
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isSubmitting = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
 
-    if (errorMessage != null && mounted) {
+    if (!mounted) return;
+    if (errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
+        SnackBar(content: Text(errorMessage), duration: const Duration(seconds: 6)),
       );
+    }
+    if (item9Status != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(PatientCrisisReporter.describe(item9Status)),
+        duration: const Duration(seconds: 8),
+        backgroundColor:
+            item9Status == CrisisReportStatus.delivered ? AppTheme.safeGreen : AppTheme.riskRed,
+      ));
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+      );
+    } else if (_isComplete && phq9Score >= 20) {
+      await _showSafetyFollowUp(linked: therapistId != null, offline: queuedOffline);
     }
   }
 
-  Future<void> _saveAssessmentOffline({
-    required String patientId,
-    required String? therapistId,
-    required int phq9Score,
-    required int gad7Score,
-    required List<int> phqAnswers,
-    required List<int> gadAnswers,
-  }) async {
-    try {
-      final dbService = DatabaseService();
-      await dbService.queuePendingAssessment(
-        id: '${patientId}_${DateTime.now().millisecondsSinceEpoch}',
-        patientId: patientId,
-        therapistId: therapistId,
-        phq9Score: phq9Score,
-        gad7Score: gad7Score,
-        answers: {'phq9': phqAnswers, 'gad7': gadAnswers},
-      );
-      if (!mounted) return;
-      setState(() {
-        _phq9Score = phq9Score;
-        _gad7Score = gad7Score;
-        _isComplete = true;
-      });
-    } catch (_) {
-      // Local storage unavailable; the in-memory result still completes the flow.
-      if (!mounted) return;
-      setState(() {
-        _phq9Score = phq9Score;
-        _gad7Score = gad7Score;
-        _isComplete = true;
-      });
-    }
+  Future<void> _showSafetyFollowUp({required bool linked, required bool offline}) async {
+    final notifyText = !linked
+        ? 'You are not linked to a therapist, so no clinician was notified.'
+        : offline
+            ? 'Your therapist will be notified as soon as your device reconnects.'
+            : 'Your therapist is being notified.';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppTheme.cardDark,
+        title: const Text('Your safety matters'),
+        content: Text(
+          'Some of your answers suggest you may be going through something very hard. '
+          '$notifyText\n\nIf you are thinking about hurting yourself, please reach out now.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.riskRed),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+              );
+            },
+            child: const Text('Get help now'),
+          ),
+        ],
+      ),
+    );
   }
 
-  Future<void> _flushPendingAssessments() async {
+  /// Uploads assessments queued in SQLite by OLDER app versions, using the
+  /// queue id as the document id so retries can never create duplicates.
+  /// New submissions are never queued here.
+  Future<void> _flushLegacyPendingAssessments() async {
     try {
       final dbService = DatabaseService();
       final pending = await dbService.getPendingAssessments();
       for (final item in pending) {
-        await _firestore.collection('clinical_assessments').add({
+        final id = item['id'] as String;
+        dynamic answers = item['answers'];
+        if (answers is String) {
+          try {
+            answers = jsonDecode(answers);
+          } catch (_) {}
+        }
+        final phq = (answers is Map && answers['phq9'] is List)
+            ? List<int>.from((answers['phq9'] as List).map((e) => (e as num).toInt()))
+            : const <int>[];
+        final tid = item['therapistId'];
+        await _firestore.collection('clinical_assessments').doc(id).set({
           'patientId': item['patientId'],
-          'therapistId': item['therapistId'],
+          'therapistId': (tid is String && tid.isNotEmpty) ? tid : null,
+          'type': 'phq9_gad7',
+          'totalScore': item['phq9Score'],
+          if (phq.length == 9) 'item9': phq[8],
+          if (phq.length == 9) 'phq9Answers': phq,
           'phq9Score': item['phq9Score'],
           'gad7Score': item['gad7Score'],
-          'answers': item['answers'],
+          'answers': answers,
           'timestamp': FieldValue.serverTimestamp(),
-          'type': 'phq9_gad7',
-        }).timeout(const Duration(seconds: 30));
-        await dbService.deletePendingAssessment(item['id'] as String);
+          'legacyQueued': true,
+        }).timeout(const Duration(seconds: 15));
+        await dbService.deletePendingAssessment(id);
       }
-    } catch (_) {
-      // Flush retries on the next successful submission.
+    } catch (e) {
+      debugPrint('Legacy assessment flush deferred: $e');
     }
   }
 

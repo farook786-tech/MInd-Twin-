@@ -1,1159 +1,651 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:uuid/uuid.dart';
-import 'package:intl/intl.dart';
-import '../../core/theme/app_theme.dart';
-import '../../models/appointment.dart';
-import '../../models/patient.dart';
-import '../../services/backend_api_service.dart';
-import '../../services/database_service.dart';
-import '../../services/auth_service.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_card.dart';
+import '../../models/appointment_v2.dart';
+import '../../services/appointment_service.dart';
+import '../patient/patient_appointments_screen.dart'
+    show
+        AppointmentJoinButton,
+        AppointmentStatusChip,
+        formatAppointmentTime,
+        localTimeZoneHint,
+        nextSuggestedSlot,
+        pickAppointmentDateTime,
+        showAppointmentReasonDialog;
+import 'session_notes_screen.dart';
+
+/// Therapist appointment hub: live requests (with badge), upcoming sessions,
+/// history. Backed solely by Firestore `appointments` via [AppointmentService].
+///
+/// Usable with no arguments (tab / push-notification routing). When
+/// [patientId] is given, the list is limited to that patient and "New session"
+/// pre-selects them.
 class AppointmentsScreen extends StatefulWidget {
-  const AppointmentsScreen({super.key});
+  final String? patientId;
+  final String? patientName;
+
+  const AppointmentsScreen({super.key, this.patientId, this.patientName});
 
   @override
   State<AppointmentsScreen> createState() => _AppointmentsScreenState();
 }
 
 class _AppointmentsScreenState extends State<AppointmentsScreen> {
-  final DatabaseService _dbService = DatabaseService();
-  final AuthService _authService = AuthService();
-  final BackendApiService _backendApiService = BackendApiService();
-  List<Appointment> _appointments = [];
-  List<Patient> _patients = [];
-  bool _isLoading = true;
-  String _filterStatus = 'all'; // all, scheduled, completed, cancelled
+  final AppointmentService _service = AppointmentService();
 
-  String _normalizeStatus(String? raw) {
-    final normalized = (raw ?? '').trim().toLowerCase();
-    if (normalized == 'complete') return 'completed';
-    if (normalized == 'canceled') return 'cancelled';
-    if (normalized == 'no_show' || normalized == 'no-show') return 'noshow';
-    if (normalized.isEmpty) return 'scheduled';
-    return normalized;
-  }
+  String? _uid;
+  Stream<List<AppointmentV2>>? _stream;
+  Timer? _ticker;
+  final Set<String> _busy = <String>{};
 
-  String _statusLabel(String rawStatus) {
-    switch (_normalizeStatus(rawStatus)) {
-      case 'scheduled':
-        return 'Scheduled';
-      case 'completed':
-        return 'Completed';
-      case 'cancelled':
-        return 'Cancelled';
-      case 'noshow':
-        return 'No Show';
-      default:
-        return rawStatus;
-    }
-  }
+  bool get _filtered => (widget.patientId ?? '').isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    try {
-      final therapistId = _authService.currentUserId ?? '';
-      final localAppointments = kIsWeb
-          ? <Appointment>[]
-          : await _dbService.getAppointments(therapistId, isTherapist: true);
-      final patients = kIsWeb
-          ? <Patient>[]
-          : await _dbService.getAllPatients();
-
-      final remoteRows = await _backendApiService.fetchSharedAppointments();
-      final remoteAppointments = remoteRows.map((row) {
-        final rawScheduled =
-            (row['scheduled_at'] ?? DateTime.now().toIso8601String())
-                .toString();
-        return Appointment(
-          id: (row['id'] ?? const Uuid().v4()).toString(),
-          patientId: (row['patient_external_id'] ?? '').toString(),
-          patientName: (row['patient_name'] ?? 'Patient').toString(),
-          therapistId:
-              (row['therapist_external_id'] ?? 'therapist_main').toString(),
-          therapistName: (row['therapist_name'] ?? 'Therapist').toString(),
-          scheduledAt: DateTime.tryParse(rawScheduled) ?? DateTime.now(),
-          durationMinutes: (row['duration_minutes'] as num?)?.toInt() ?? 50,
-          type: (row['type'] ?? 'followup').toString(),
-          status: _normalizeStatus((row['status'] ?? 'scheduled').toString()),
-          notes: row['notes']?.toString(),
-          isVirtual: ((row['is_virtual'] as num?)?.toInt() ?? 0) == 1,
-          createdAt: DateTime.tryParse(
-                  (row['created_at'] ?? DateTime.now().toIso8601String())
-                      .toString()) ??
-              DateTime.now(),
-        );
-      }).toList();
-
-      final merged = <String, Appointment>{
-        for (final a in localAppointments) a.id: a,
-      };
-      for (final a in remoteAppointments) {
-        final existing = merged[a.id];
-        if (existing == null) {
-          merged[a.id] = a;
-          continue;
-        }
-
-        final localStatus = _normalizeStatus(existing.status);
-        final remoteStatus = _normalizeStatus(a.status);
-        final shouldPreserveLocal =
-            (localStatus == 'completed' ||
-                localStatus == 'cancelled' ||
-                localStatus == 'noshow') &&
-            remoteStatus == 'scheduled';
-
-        merged[a.id] = shouldPreserveLocal ? existing : a;
-      }
-
-      final appointments = merged.values.toList()
-        ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
-
-      setState(() {
-        _appointments = appointments;
-        _patients = patients;
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('Error loading appointments: $e');
-      setState(() => _isLoading = false);
+    _uid = _service.currentUid;
+    final uid = _uid;
+    if (uid != null) {
+      _stream = _service.watchForTherapist(uid, patientId: widget.patientId);
     }
-  }
-
-  List<Appointment> get _filteredAppointments {
-    if (_filterStatus == 'all') return _appointments;
-    return _appointments
-        .where((a) => _normalizeStatus(a.status) == _filterStatus)
-        .toList();
+    // Re-classify sessions (upcoming -> awaiting outcome) as time passes.
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppTheme.cardDark,
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryIndigo.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.calendar_month_rounded,
-                  color: AppTheme.primaryIndigo, size: 20),
-            ),
-            const SizedBox(width: 12),
-            const Text('Appointments',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _loadData,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Filter chips
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  color: AppTheme.backgroundDark,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildFilterChip('All', 'all'),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Scheduled', 'scheduled'),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Completed', 'completed'),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Cancelled', 'cancelled'),
-                      ],
-                    ),
-                  ),
-                ),
-
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                  child: Row(
-                    children: [
-                      Text(
-                        '${_filteredAppointments.length} appointment(s)',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        'Filter: ${_filterStatus == 'all' ? 'All' : _statusLabel(_filterStatus)}',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Appointments list
-                Expanded(
-                  child: _filteredAppointments.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(24),
-                                decoration: BoxDecoration(
-                                  color:
-                                      const Color(0xFF5C6BC0).withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(Icons.event_busy_rounded,
-                                    size: 64,
-                                    color: const Color(0xFF5C6BC0)
-                                        .withValues(alpha: 0.5)),
-                              ),
-                              const SizedBox(height: 20),
-                              const Text(
-                                'No appointments found',
-                                style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w500),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Schedule a new appointment below',
-                                style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.5),
-                                    fontSize: 14),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _filteredAppointments.length,
-                          itemBuilder: (context, index) {
-                            final appointment = _filteredAppointments[index];
-                            return _buildAppointmentCard(appointment);
-                          },
-                        ),
-                ),
-              ],
-            ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateAppointmentDialog,
-        backgroundColor: const Color(0xFF5C6BC0),
-        elevation: 4,
-        icon: const Icon(Icons.add_circle_outline, size: 24),
-        label: const Text('New Appointment',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-      ),
-    );
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
   }
 
-  Widget _buildFilterChip(String label, String value) {
-    final isSelected = _filterStatus == value;
-    return GestureDetector(
-      onTap: () => setState(() => _filterStatus = value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primaryIndigo : AppTheme.cardDark,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? AppTheme.primaryIndigo
-                : Colors.white.withValues(alpha: 0.2),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.7),
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAppointmentCard(Appointment appointment) {
-    final isPast = appointment.scheduledAt.isBefore(DateTime.now());
-    final normalizedStatus = _normalizeStatus(appointment.status);
-    final statusColor = _getStatusColor(normalizedStatus);
-    final typeIcon = _getTypeIcon(appointment.type);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: AppTheme.cardDark,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: statusColor.withValues(alpha: 0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => _showAppointmentDetailsDialog(appointment),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header row
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        typeIcon,
-                        style: const TextStyle(fontSize: 22),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            appointment.patientName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _formatAppointmentType(appointment.type),
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.65),
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: statusColor, width: 1.5),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: statusColor,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            _statusLabel(normalizedStatus).toUpperCase(),
-                            style: TextStyle(
-                              color: statusColor,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Date and time
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.calendar_today_rounded,
-                          size: 16, color: Colors.white.withValues(alpha: 0.6)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          DateFormat('EEEE, MMM dd, yyyy • h:mm a')
-                              .format(appointment.scheduledAt),
-                          style: TextStyle(
-                            color: isPast
-                                ? AppTheme.warningAmber
-                                : Colors.white.withValues(alpha: 0.85),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Icon(Icons.timer_rounded,
-                          size: 16, color: Colors.white.withValues(alpha: 0.6)),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${appointment.durationMinutes} min',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Virtual indicator
-                if (appointment.isVirtual) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryIndigo.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppTheme.primaryIndigo.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.videocam_rounded,
-                          size: 16,
-                          color: AppTheme.primaryIndigo,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Virtual Session',
-                          style: TextStyle(
-                            color: AppTheme.primaryIndigo,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-
-                // Notes preview
-                if (appointment.notes != null &&
-                    appointment.notes!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    appointment.notes!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-
-                if (normalizedStatus == 'scheduled') ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _markAppointmentCancelled(appointment),
-                          icon: const Icon(Icons.cancel_outlined, size: 18),
-                          label: const Text('Cancel'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppTheme.riskRed,
-                            side: BorderSide(
-                              color: AppTheme.riskRed.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _markAppointmentComplete(appointment),
-                          icon: const Icon(Icons.check_circle_outline, size: 18),
-                          label: const Text('Mark Complete'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.safeGreen,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showCreateAppointmentDialog() {
-    final currentUser = _authService.getCurrentUser();
-    final therapistName = (currentUser?['name'] ?? 'Therapist').toString();
-    showDialog(
-      context: context,
-      builder: (context) => _AppointmentFormDialog(
-        patients: _patients,
-        therapistId: _authService.currentUserId ?? '',
-        therapistName: therapistName,
-        onSave: (appointment) async {
-          await _dbService.insertAppointment(appointment);
-          _loadData();
-        },
-      ),
-    );
-  }
-
-  void _showAppointmentDetailsDialog(Appointment appointment) {
-    showDialog(
-      context: context,
-      builder: (context) => _AppointmentDetailsDialog(
-        appointment: appointment,
-        onUpdate: (updated) async {
-          await _dbService.updateAppointment(updated);
-          _loadData();
-        },
-        onDelete: () async {
-          await _dbService.deleteAppointment(appointment.id);
-          _loadData();
-        },
-      ),
-    );
-  }
-
-  Future<void> _markAppointmentComplete(Appointment appointment) async {
-    final updated = appointment.copyWith(
-      status: 'completed',
-      completedAt: DateTime.now(),
-    );
-    await _dbService.updateAppointment(updated);
-    await _loadData();
+  void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Appointment marked as completed.')),
+      SnackBar(content: Text(msg), backgroundColor: error ? AppTheme.riskRed : null),
     );
   }
 
-  Future<void> _markAppointmentCancelled(Appointment appointment) async {
-    final updated = appointment.copyWith(status: 'cancelled');
-    await _dbService.updateAppointment(updated);
-    await _loadData();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Appointment marked as cancelled.')),
-    );
-  }
-
-  Color _getStatusColor(String status) {
-    switch (_normalizeStatus(status)) {
-      case 'scheduled':
-        return AppTheme.primaryIndigo;
-      case 'completed':
-        return AppTheme.safeGreen;
-      case 'cancelled':
-        return AppTheme.riskRed;
-      case 'noshow':
-        return AppTheme.warningAmber;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _getTypeIcon(String type) {
-    switch (type) {
-      case 'individual':
-        return '👤';
-      case 'group':
-        return '👥';
-      case 'initial':
-        return '🆕';
-      case 'followup':
-        return '🔄';
-      default:
-        return '📋';
-    }
-  }
-
-  String _formatAppointmentType(String type) {
-    switch (type) {
-      case 'individual':
-        return 'Individual Therapy';
-      case 'group':
-        return 'Group Therapy';
-      case 'initial':
-        return 'Initial Consultation';
-      case 'followup':
-        return 'Follow-up Session';
-      default:
-        return type;
-    }
-  }
-}
-
-// Dialog for creating appointments
-class _AppointmentFormDialog extends StatefulWidget {
-  final List<Patient> patients;
-  final String therapistId;
-  final String therapistName;
-  final Function(Appointment) onSave;
-
-  const _AppointmentFormDialog({
-    required this.patients,
-    required this.therapistId,
-    required this.therapistName,
-    required this.onSave,
-  });
-
-  @override
-  State<_AppointmentFormDialog> createState() => _AppointmentFormDialogState();
-}
-
-class _AppointmentFormDialogState extends State<_AppointmentFormDialog> {
-  Patient? _selectedPatient;
-  DateTime _selectedDate = DateTime.now();
-  TimeOfDay _selectedTime = TimeOfDay.now();
-  String _selectedType = 'individual';
-  int _durationMinutes = 50;
-  bool _isVirtual = false;
-  final _notesController = TextEditingController();
-  final _meetingLinkController = TextEditingController();
-  final BackendApiService _backendApiService = BackendApiService();
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: AppTheme.cardDark,
-      title: const Text('Schedule Appointment',
-          style: TextStyle(color: Colors.white)),
-      content: SingleChildScrollView(
-        child: SizedBox(
-          width: MediaQuery.of(context).size.width * 0.9,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Patient selection
-              const Text('Select Patient',
-                  style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<Patient>(
-                initialValue: _selectedPatient,
-                dropdownColor: AppTheme.backgroundDark,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: AppTheme.backgroundDark,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-                items: widget.patients.map((patient) {
-                  return DropdownMenuItem<Patient>(
-                    value: patient,
-                    child: Text(patient.name,
-                        style: const TextStyle(color: Colors.white)),
-                  );
-                }).toList(),
-                onChanged: (patient) =>
-                    setState(() => _selectedPatient = patient),
-              ),
-              const SizedBox(height: 16),
-
-              // Appointment type
-              const Text('Appointment Type',
-                  style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: _selectedType,
-                dropdownColor: AppTheme.backgroundDark,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: AppTheme.backgroundDark,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                      value: 'individual',
-                      child: Text('👤 Individual Therapy',
-                          style: TextStyle(color: Colors.white))),
-                  DropdownMenuItem(
-                      value: 'group',
-                      child: Text('👥 Group Therapy',
-                          style: TextStyle(color: Colors.white))),
-                  DropdownMenuItem(
-                      value: 'initial',
-                      child: Text('🆕 Initial Consultation',
-                          style: TextStyle(color: Colors.white))),
-                  DropdownMenuItem(
-                      value: 'followup',
-                      child: Text('🔄 Follow-up Session',
-                          style: TextStyle(color: Colors.white))),
-                ],
-                onChanged: (type) => setState(() => _selectedType = type!),
-              ),
-              const SizedBox(height: 16),
-
-              // Date and time
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Date',
-                            style: TextStyle(color: Colors.white70)),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            final date = await showDatePicker(
-                              context: context,
-                              initialDate: _selectedDate,
-                              firstDate: DateTime.now(),
-                              lastDate:
-                                  DateTime.now().add(const Duration(days: 365)),
-                            );
-                            if (date != null) {
-                              setState(() => _selectedDate = date);
-                            }
-                          },
-                          icon: const Icon(Icons.calendar_today),
-                          label:
-                              Text(DateFormat('MMM dd').format(_selectedDate)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.backgroundDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Time',
-                            style: TextStyle(color: Colors.white70)),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            final time = await showTimePicker(
-                              context: context,
-                              initialTime: _selectedTime,
-                            );
-                            if (time != null) {
-                              setState(() => _selectedTime = time);
-                            }
-                          },
-                          icon: const Icon(Icons.access_time),
-                          label: Text(_selectedTime.format(context)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.backgroundDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Duration
-              const Text('Duration (minutes)',
-                  style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  _buildDurationChip(30),
-                  const SizedBox(width: 8),
-                  _buildDurationChip(50),
-                  const SizedBox(width: 8),
-                  _buildDurationChip(60),
-                  const SizedBox(width: 8),
-                  _buildDurationChip(90),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Virtual checkbox
-              CheckboxListTile(
-                value: _isVirtual,
-                onChanged: (value) =>
-                    setState(() => _isVirtual = value ?? false),
-                title: const Text('Virtual Session',
-                    style: TextStyle(color: Colors.white)),
-                activeColor: AppTheme.primaryIndigo,
-                tileColor: AppTheme.backgroundDark,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-
-              // Meeting link (if virtual)
-              if (_isVirtual) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _meetingLinkController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Meeting Link',
-                    labelStyle: const TextStyle(color: Colors.white70),
-                    filled: true,
-                    fillColor: AppTheme.backgroundDark,
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-
-              // Notes
-              TextField(
-                controller: _notesController,
-                style: const TextStyle(color: Colors.white),
-                maxLines: 3,
-                decoration: InputDecoration(
-                  labelText: 'Notes (optional)',
-                  labelStyle: const TextStyle(color: Colors.white70),
-                  filled: true,
-                  fillColor: AppTheme.backgroundDark,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: () => _saveAppointment(),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primaryIndigo,
-          ),
-          child: const Text('Schedule'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDurationChip(int minutes) {
-    final isSelected = _durationMinutes == minutes;
-    return GestureDetector(
-      onTap: () => setState(() => _durationMinutes = minutes),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primaryIndigo : AppTheme.backgroundDark,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? AppTheme.primaryIndigo
-                : Colors.white.withValues(alpha: 0.2),
-          ),
-        ),
-        child: Text(
-          '$minutes',
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.7),
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _saveAppointment() async {
-    if (_selectedPatient == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a patient')),
-      );
-      return;
-    }
-
-    final scheduledAt = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-      _selectedTime.hour,
-      _selectedTime.minute,
-    );
-
-    final appointment = Appointment(
-      id: const Uuid().v4(),
-      patientId: _selectedPatient!.id,
-      patientName: _selectedPatient!.name,
-      therapistId: widget.therapistId,
-      therapistName: widget.therapistName,
-      scheduledAt: scheduledAt,
-      durationMinutes: _durationMinutes,
-      type: _selectedType,
-      status: 'scheduled',
-      notes: _notesController.text.trim().isNotEmpty
-          ? _notesController.text.trim()
-          : null,
-      meetingLink: _isVirtual && _meetingLinkController.text.trim().isNotEmpty
-          ? _meetingLinkController.text.trim()
-          : null,
-      isVirtual: _isVirtual,
-      createdAt: DateTime.now(),
-    );
-
-    final confirmed = await showDialog<bool>(
+  Future<void> _showBlocking(String title, String message) {
+    return showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: const Text('Send Appointment To Patient?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Send this appointment to ${appointment.patientName} now?\n\n${DateFormat('EEE, MMM dd • h:mm a').format(appointment.scheduledAt)}',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep Local Only'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryIndigo),
-            child: const Text('Confirm & Send'),
-          ),
-        ],
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        content: Text(message, style: const TextStyle(color: Colors.white70)),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
       ),
     );
+  }
 
-    widget.onSave(appointment);
-    if (!mounted) return;
-    Navigator.pop(context);
-
-    if (confirmed == true) {
-      final synced = await _backendApiService.bookSharedAppointment({
-        'id': appointment.id,
-        'patientExternalId': appointment.patientId,
-        'patientName': appointment.patientName,
-        'therapistExternalId': appointment.therapistId,
-        'therapistName': appointment.therapistName,
-        'scheduledAt': appointment.scheduledAt.toIso8601String(),
-        'durationMinutes': appointment.durationMinutes,
-        'type': appointment.type,
-        'notes': appointment.notes,
-        'isVirtual': appointment.isVirtual,
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            synced
-                ? 'Appointment sent to patient app.'
-                : 'Appointment saved locally. Sending to patient failed.',
-          ),
-          backgroundColor: synced ? AppTheme.safeGreen : AppTheme.warningAmber,
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Appointment saved locally only.')),
-      );
+  Future<void> _run(String id, Future<void> Function() op, String success) async {
+    setState(() => _busy.add(id));
+    try {
+      await op();
+      _snack(success);
+    } catch (e) {
+      final msg = AppointmentService.describeError(e);
+      if (e is AppointmentConflictException) {
+        await _showBlocking('Time slot unavailable', msg);
+      } else {
+        _snack(msg, error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(id));
     }
   }
-}
 
-// Dialog for viewing and editing appointment details
-class _AppointmentDetailsDialog extends StatelessWidget {
-  final Appointment appointment;
-  final Function(Appointment) onUpdate;
-  final VoidCallback onDelete;
+  Future<void> _accept(AppointmentV2 a) async {
+    final minStart = DateTime.now().add(AppointmentService.minLeadTime);
+    final proposedUsable = a.proposedAt != null && a.proposedAt!.isAfter(minStart);
 
-  const _AppointmentDetailsDialog({
-    required this.appointment,
-    required this.onUpdate,
-    required this.onDelete,
-  });
-
-  String _statusLabel(String rawStatus) {
-    final normalized = rawStatus.trim().toLowerCase();
-    switch (normalized) {
-      case 'scheduled':
-        return 'Scheduled';
-      case 'completed':
-      case 'complete':
-        return 'Completed';
-      case 'cancelled':
-      case 'canceled':
-        return 'Cancelled';
-      case 'noshow':
-      case 'no_show':
-      case 'no-show':
-        return 'No Show';
-      default:
-        return rawStatus;
+    DateTime? chosen;
+    if (proposedUsable) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.cardDark,
+          title: const Text('Accept request', style: TextStyle(color: Colors.white)),
+          content: Text(
+            '${a.patientName} proposed ${formatAppointmentTime(a.proposedAt!)} '
+            '(${a.durationMinutes} min, ${a.isVirtual ? 'online' : 'in person'}).',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Back')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'pick'),
+              child: const Text('Choose another time'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'proposed'),
+              child: const Text('Accept proposed time'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      chosen = choice == 'proposed'
+          ? a.proposedAt
+          : await pickAppointmentDateTime(context, a.proposedAt!);
+    } else {
+      chosen = await pickAppointmentDateTime(context, nextSuggestedSlot());
     }
+    if (chosen == null || !mounted) return;
+    if (!chosen.isAfter(minStart)) {
+      await _showBlocking('Time in the past', 'Please choose a time in the future.');
+      return;
+    }
+    final at = chosen;
+    await _run(a.id, () => _service.accept(a, at), 'Session scheduled for ${formatAppointmentTime(at)}.');
+  }
+
+  Future<void> _decline(AppointmentV2 a) async {
+    final reason = await showAppointmentReasonDialog(
+      context,
+      title: 'Decline request?',
+      hint: 'Reason shown to the patient',
+      confirmLabel: 'Decline',
+      required: true,
+    );
+    if (reason == null || !mounted) return;
+    await _run(a.id, () => _service.decline(a, reason), 'Request declined.');
+  }
+
+  Future<void> _cancel(AppointmentV2 a) async {
+    final reason = await showAppointmentReasonDialog(
+      context,
+      title: 'Cancel session?',
+      hint: 'Reason shown to the patient (optional)',
+      confirmLabel: 'Cancel session',
+    );
+    if (reason == null || !mounted) return;
+    await _run(a.id, () => _service.cancel(a, byRole: 'therapist', reason: reason),
+        'Session cancelled.');
+  }
+
+  Future<void> _outcome(AppointmentV2 a, String outcome) async {
+    await _run(
+      a.id,
+      () => _service.markOutcome(a, outcome),
+      outcome == AppointmentStatus.completed ? 'Marked as completed.' : 'Marked as no-show.',
+    );
+  }
+
+  void _openNotes(AppointmentV2 a) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => SessionNotesScreen.forAppointment(appointment: a)),
+    );
+  }
+
+  Future<void> _newSession() async {
+    final uid = _uid;
+    if (uid == null) return;
+    final created = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.cardDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _NewSessionSheet(
+        service: _service,
+        therapistId: uid,
+        initialPatientId: widget.patientId,
+        initialPatientName: widget.patientName,
+      ),
+    );
+    if (created == true) _snack('Session scheduled. The patient has been notified.');
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: AppTheme.cardDark,
-      title: Row(
-        children: [
-          const Text('Appointment Details',
-              style: TextStyle(color: Colors.white)),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            onPressed: () {
-              Navigator.pop(context);
-              onDelete();
-            },
-          ),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildInfoRow('Patient', appointment.patientName, Icons.person),
-            _buildInfoRow(
-                'Type', _formatType(appointment.type), Icons.category),
-            _buildInfoRow(
-                'Date',
-                DateFormat('MMM dd, yyyy').format(appointment.scheduledAt),
-                Icons.calendar_today),
-            _buildInfoRow(
-                'Time',
-                DateFormat('h:mm a').format(appointment.scheduledAt),
-                Icons.access_time),
-            _buildInfoRow('Duration', '${appointment.durationMinutes} minutes',
-                Icons.timer),
-            _buildInfoRow(
-              'Status', _statusLabel(appointment.status), Icons.info),
-            if (appointment.isVirtual)
-              _buildInfoRow('Virtual', 'Yes', Icons.videocam),
-            if (appointment.meetingLink != null)
-              _buildInfoRow('Link', appointment.meetingLink!, Icons.link),
-            if (appointment.notes != null) ...[
-              const SizedBox(height: 12),
-              const Text('Notes:',
-                  style: TextStyle(
-                      color: Colors.white70, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text(appointment.notes!,
-                  style: const TextStyle(color: Colors.white)),
+    final uid = _uid;
+    final title = _filtered ? 'Sessions • ${widget.patientName ?? 'Patient'}' : 'Appointments';
+    if (uid == null) {
+      return Scaffold(
+        backgroundColor: AppTheme.backgroundDark,
+        appBar: AppBar(backgroundColor: AppTheme.cardDark, title: Text(title)),
+        body: const Center(
+          child: Text('Please sign in again.', style: TextStyle(color: Colors.white)),
+        ),
+      );
+    }
+
+    return StreamBuilder<List<AppointmentV2>>(
+      stream: _stream,
+      builder: (context, snap) {
+        final all = snap.data ?? const <AppointmentV2>[];
+        final now = DateTime.now();
+        final requests = all.where((a) => a.isRequested).toList()
+          ..sort((a, b) => (a.createdAt ?? now).compareTo(b.createdAt ?? now));
+        final upcoming = all.where((a) => a.isScheduled).toList()
+          ..sort((a, b) => (a.scheduledAt ?? now).compareTo(b.scheduledAt ?? now));
+        final history = all.where((a) => a.isTerminal).toList()
+          ..sort((a, b) {
+            final at = a.effectiveStart ?? a.updatedAt ?? now;
+            final bt = b.effectiveStart ?? b.updatedAt ?? now;
+            return bt.compareTo(at);
+          });
+
+        Widget body;
+        if (snap.hasError) {
+          body = _message('Could not load appointments.\n'
+              '${AppointmentService.describeError(snap.error!)}');
+        } else if (!snap.hasData) {
+          body = const Center(child: CircularProgressIndicator());
+        } else {
+          body = TabBarView(
+            children: [
+              _list(requests, 'No pending requests.'),
+              _list(upcoming, 'No upcoming sessions. Tap "New session" to book one.'),
+              _list(history, 'No past sessions yet.'),
             ],
-          ],
-        ),
-      ),
-      actions: [
-        if (appointment.status == 'scheduled') ...[
-          TextButton(
-            onPressed: () {
-              final updated = appointment.copyWith(status: 'cancelled');
-              Navigator.pop(context);
-              onUpdate(updated);
-            },
-            child: const Text('Cancel Appointment',
-                style: TextStyle(color: Colors.orange)),
+          );
+        }
+
+        return DefaultTabController(
+          length: 3,
+          child: Scaffold(
+            backgroundColor: AppTheme.backgroundDark,
+            appBar: AppBar(
+              backgroundColor: AppTheme.cardDark,
+              title: Text(title),
+              bottom: TabBar(
+                tabs: [
+                  Tab(
+                    child: Badge(
+                      isLabelVisible: requests.isNotEmpty,
+                      label: Text('${requests.length}'),
+                      child: const Padding(
+                        padding: EdgeInsets.only(right: 6),
+                        child: Text('Requests'),
+                      ),
+                    ),
+                  ),
+                  const Tab(text: 'Upcoming'),
+                  const Tab(text: 'History'),
+                ],
+              ),
+            ),
+            floatingActionButton: FloatingActionButton.extended(
+              onPressed: _newSession,
+              backgroundColor: AppTheme.primaryIndigo,
+              icon: const Icon(Icons.add),
+              label: const Text('New session'),
+            ),
+            body: body,
           ),
-          ElevatedButton(
-            onPressed: () {
-              final updated = appointment.copyWith(
-                  status: 'completed', completedAt: DateTime.now());
-              Navigator.pop(context);
-              onUpdate(updated);
-            },
-            style:
-                ElevatedButton.styleFrom(backgroundColor: AppTheme.safeGreen),
-            child: const Text('Mark Complete'),
-          ),
-        ],
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
+        );
+      },
+    );
+  }
+
+  Widget _message(String text) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
         ),
+      );
+
+  Widget _list(List<AppointmentV2> items, String empty) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(localTimeZoneHint(), style: const TextStyle(color: Colors.white38, fontSize: 12)),
+        ),
+        if (items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 40),
+            child: EmptyState(message: empty, emoji: '📅'),
+          )
+        else
+          ...items.map(_card),
       ],
     );
   }
 
-  Widget _buildInfoRow(String label, String value, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: AppTheme.primaryIndigo),
-          const SizedBox(width: 12),
-          Text('$label:',
-              style: const TextStyle(
-                  color: Colors.white70, fontWeight: FontWeight.bold)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(value, style: const TextStyle(color: Colors.white)),
+  Widget _card(AppointmentV2 a) {
+    final now = DateTime.now();
+    final busy = _busy.contains(a.id);
+    final whenLabel = a.scheduledAt != null
+        ? formatAppointmentTime(a.scheduledAt!)
+        : a.proposedAt != null
+            ? 'Proposed: ${formatAppointmentTime(a.proposedAt!)}'
+            : 'Time not set';
+    final proposedPast = a.isRequested && a.proposedAt != null && a.proposedAt!.isBefore(now);
+
+    final actions = <Widget>[];
+    if (a.isRequested) {
+      actions.addAll([
+        TextButton(
+          onPressed: () => _decline(a),
+          child: const Text('Decline', style: TextStyle(color: AppTheme.riskRed)),
+        ),
+        ElevatedButton(
+          onPressed: () => _accept(a),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.safeGreen, foregroundColor: Colors.white),
+          child: const Text('Accept'),
+        ),
+      ]);
+    } else if (a.isScheduled) {
+      actions.add(TextButton(onPressed: () => _openNotes(a), child: const Text('Notes')));
+      if (a.hasStarted(now)) {
+        actions.addAll([
+          TextButton(
+            onPressed: () => _outcome(a, AppointmentStatus.noShow),
+            child: const Text('No-show', style: TextStyle(color: AppTheme.warningAmber)),
           ),
+          ElevatedButton(
+            onPressed: () => _outcome(a, AppointmentStatus.completed),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.safeGreen, foregroundColor: Colors.white),
+            child: const Text('Completed'),
+          ),
+        ]);
+      }
+      if (a.canCancel) {
+        actions.add(TextButton(
+          onPressed: () => _cancel(a),
+          child: const Text('Cancel', style: TextStyle(color: AppTheme.riskRed)),
+        ));
+      }
+    } else if (a.status == AppointmentStatus.completed || a.status == AppointmentStatus.noShow) {
+      actions.add(TextButton(onPressed: () => _openNotes(a), child: const Text('Notes')));
+    }
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(a.isVirtual ? Icons.videocam : Icons.location_on, color: Colors.white70, size: 18),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(a.patientName,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+              AppointmentStatusChip(status: a.status),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(whenLabel, style: const TextStyle(color: Colors.white, fontSize: 14)),
+          if (proposedPast)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('Proposed time has passed — choose a new time when accepting.',
+                  style: TextStyle(color: AppTheme.warningAmber, fontSize: 12)),
+            ),
+          const SizedBox(height: 4),
+          Text(
+            '${a.durationMinutes} min • ${a.isVirtual ? 'Online' : 'In person'} • '
+            '${a.requestedBy == 'patient' ? 'Requested by patient' : 'Booked by you'}'
+            '${a.hasPendingWrites ? ' • syncing…' : ''}',
+            style: const TextStyle(color: Colors.white60, fontSize: 12),
+          ),
+          if (a.reason.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('Reason: ${a.reason}', style: const TextStyle(color: Colors.white70)),
+          ],
+          if (a.notes.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(a.notes, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+          ],
+          if (a.status == AppointmentStatus.cancelled && a.cancelledBy != null) ...[
+            const SizedBox(height: 6),
+            Text(a.cancelledBy == 'therapist' ? 'Cancelled by you' : 'Cancelled by patient',
+                style: const TextStyle(color: Colors.white60, fontSize: 12)),
+          ],
+          if (a.needsOutcome(now))
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text('Session ended — please record the outcome.',
+                  style: TextStyle(color: AppTheme.warningAmber, fontSize: 12)),
+            ),
+          if (a.isScheduled && a.isVirtual) ...[
+            const SizedBox(height: 12),
+            AppointmentJoinButton(appointment: a),
+          ],
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            busy
+                ? const Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                    ),
+                  )
+                : Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: actions,
+                  ),
+          ],
         ],
       ),
     );
   }
+}
 
-  String _formatType(String type) {
-    switch (type) {
-      case 'individual':
-        return 'Individual Therapy';
-      case 'group':
-        return 'Group Therapy';
-      case 'initial':
-        return 'Initial Consultation';
-      case 'followup':
-        return 'Follow-up Session';
-      default:
-        return type;
+class _NewSessionSheet extends StatefulWidget {
+  final AppointmentService service;
+  final String therapistId;
+  final String? initialPatientId;
+  final String? initialPatientName;
+
+  const _NewSessionSheet({
+    required this.service,
+    required this.therapistId,
+    this.initialPatientId,
+    this.initialPatientName,
+  });
+
+  @override
+  State<_NewSessionSheet> createState() => _NewSessionSheetState();
+}
+
+class _NewSessionSheetState extends State<_NewSessionSheet> {
+  final TextEditingController _reason = TextEditingController();
+  late final Stream<List<LinkedPatient>> _patients;
+  String? _patientId;
+  String? _patientName;
+  DateTime _start = nextSuggestedSlot();
+  int _duration = 45;
+  bool _virtual = true;
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _patients = widget.service.watchLinkedPatients(widget.therapistId);
+    _patientId = widget.initialPatientId;
+    _patientName = widget.initialPatientName;
+  }
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await pickAppointmentDateTime(context, _start);
+    if (picked == null || !mounted) return;
+    setState(() {
+      _start = picked;
+      _error = null;
+    });
+  }
+
+  Future<void> _submit() async {
+    final pid = _patientId;
+    if (pid == null || pid.isEmpty) {
+      setState(() => _error = 'Select a patient.');
+      return;
     }
+    if (!_start.isAfter(DateTime.now().add(AppointmentService.minLeadTime))) {
+      setState(() => _error = 'Please choose a time in the future.');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await widget.service.createScheduled(
+        patientId: pid,
+        patientName: _patientName ?? 'Patient',
+        scheduledAt: _start,
+        durationMinutes: _duration,
+        isVirtual: _virtual,
+        reason: _reason.text,
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = AppointmentService.describeError(e);
+      });
+    }
+  }
+
+  Widget _patientPicker() {
+    return StreamBuilder<List<LinkedPatient>>(
+      stream: _patients,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Text('Could not load your patients. ${AppointmentService.describeError(snap.error!)}',
+              style: const TextStyle(color: AppTheme.riskRed));
+        }
+        if (!snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          );
+        }
+        final patients = snap.data!;
+        if (patients.isEmpty) {
+          return const Text(
+            'No linked patients yet. Share your invite code so patients can join you.',
+            style: TextStyle(color: Colors.white70),
+          );
+        }
+        final selected = patients.any((p) => p.id == _patientId) ? _patientId : null;
+        return DropdownButtonFormField<String>(
+          initialValue: selected,
+          isExpanded: true,
+          dropdownColor: AppTheme.cardDark,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            labelText: 'Patient',
+            labelStyle: TextStyle(color: Colors.white70),
+          ),
+          items: patients
+              .map((p) => DropdownMenuItem(value: p.id, child: Text(p.name)))
+              .toList(),
+          onChanged: _submitting
+              ? null
+              : (id) {
+                  final p = patients.firstWhere((x) => x.id == id);
+                  setState(() {
+                    _patientId = p.id;
+                    _patientName = p.name;
+                  });
+                },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('New session',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            _patientPicker(),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.schedule, color: Colors.white70),
+              title: const Text('Start time', style: TextStyle(color: Colors.white70)),
+              subtitle: Text(formatAppointmentTime(_start), style: const TextStyle(color: Colors.white)),
+              trailing: const Icon(Icons.edit, color: Colors.white54),
+              onTap: _submitting ? null : _pickTime,
+            ),
+            Text(localTimeZoneHint(), style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            const SizedBox(height: 12),
+            const Text('Duration', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              children: kAppointmentDurations
+                  .map((d) => ChoiceChip(
+                        label: Text('$d min'),
+                        selected: _duration == d,
+                        onSelected: _submitting ? null : (_) => setState(() => _duration = d),
+                      ))
+                  .toList(),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _virtual,
+              onChanged: _submitting ? null : (v) => setState(() => _virtual = v),
+              title: Text(_virtual ? 'Online (video)' : 'In person',
+                  style: const TextStyle(color: Colors.white)),
+            ),
+            TextField(
+              controller: _reason,
+              enabled: !_submitting,
+              maxLength: 300,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Purpose (optional, visible to patient)',
+                labelStyle: TextStyle(color: Colors.white70),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: AppTheme.riskRed)),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _submitting ? null : _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryIndigo,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: _submitting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Schedule session'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'wearable_sync_service.dart';
 
@@ -94,6 +95,18 @@ class PatientMemoryService {
         'verbatim and never diagnose.]\n$joined';
   }
 
+  /// Patient-scoped query. When the caller is not the patient (a therapist),
+  /// also constrain therapistId == myUid: security rules are not filters.
+  Query<Map<String, dynamic>> _scoped(String collection, String patientId) {
+    Query<Map<String, dynamic>> query =
+        _firestore.collection(collection).where('patientId', isEqualTo: patientId);
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    if (myUid != null && myUid != patientId) {
+      query = query.where('therapistId', isEqualTo: myUid);
+    }
+    return query;
+  }
+
   Future<Map<String, dynamic>?> _loadProfile(String patientId) async {
     try {
       final doc = await _firestore.collection('users').doc(patientId).get();
@@ -107,8 +120,10 @@ class PatientMemoryService {
       }
       final age = d['age'];
       if (age != null) bits.add('age $age');
-      if (d['latestPhq9Score'] is num) {
-        final s = (d['latestPhq9Score'] as num).toInt();
+      final latestPhq9 = d['latestPhq9'];
+      final phqTotal = latestPhq9 is Map ? latestPhq9['total'] : d['latestPhq9Score'];
+      if (phqTotal is num) {
+        final s = phqTotal.toInt();
         bits.add('latest PHQ-9 $s/27 (${_phqLabel(s)})');
       }
       if (d['latestGad7Score'] is num) {
@@ -132,9 +147,7 @@ class PatientMemoryService {
 
   Future<List<Map<String, dynamic>>> _loadLogs(String patientId) async {
     try {
-      final snap = await _firestore
-          .collection('daily_logs')
-          .where('patientId', isEqualTo: patientId)
+      final snap = await _scoped('daily_logs', patientId)
           .orderBy('timestamp', descending: true)
           .limit(_retrievalPoolCount)
           .get();
@@ -146,16 +159,14 @@ class PatientMemoryService {
 
   Future<List<Map<String, dynamic>>> _loadAssessments(String patientId) async {
     try {
-      final snap = await _firestore
-          .collection('clinical_assessments')
-          .where('patientId', isEqualTo: patientId)
+      final snap = await _scoped('clinical_assessments', patientId)
           .orderBy('timestamp', descending: true)
           .limit(2)
           .get();
       final lines = <Map<String, dynamic>>[];
       for (final e in snap.docs) {
         final d = e.data();
-        final phq = d['phq9Score'];
+        final phq = d['totalScore'] ?? d['phq9Score'];
         final gad = d['gad7Score'];
         final date = _fmtDate(_toDate(d['timestamp']));
         final line = '$date: PHQ-9 ${phq ?? 'n/a'}/27'
@@ -172,9 +183,7 @@ class PatientMemoryService {
 
   Future<List<Map<String, dynamic>>> _loadCrisis(String patientId) async {
     try {
-      final snap = await _firestore
-          .collection('crisis_events')
-          .where('patientId', isEqualTo: patientId)
+      final snap = await _scoped('crisis_events', patientId)
           .orderBy('timestamp', descending: true)
           .limit(3)
           .get();

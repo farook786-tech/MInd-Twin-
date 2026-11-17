@@ -1,197 +1,169 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/material.dart';
+
 import 'core/config/app_config.dart';
 import 'core/theme/app_theme.dart';
-import 'screens/auth/role_selection_screen.dart';
-import 'screens/auth/patient_auth_screen.dart';
-import 'screens/auth/therapist_auth_screen.dart';
-import 'screens/patient/patient_home_screen.dart';
-import 'screens/therapist/therapist_dashboard_screen.dart';
+import 'firebase_options.dart';
+import 'screens/auth/app_entry_screen.dart';
 import 'services/auth_service.dart';
 import 'services/database_service.dart';
-import 'services/notification_service.dart';
 import 'services/fcm_service.dart';
+import 'services/notification_router.dart';
+import 'services/notification_service.dart';
+import 'services/push_token_service.dart';
 import 'services/token_service.dart';
 import 'services/wearable_sync_service.dart';
 
-void main() async {
+/// Startup order (docs/DATA_MODEL.md):
+///  1. Firebase.initializeApp
+///  2. FCMService().initialize()  (idempotent; also starts PushTokenService,
+///     which registers/refreshes `fcm_tokens` on every auth change)
+///  3. TokenService (backend JWT) + AuthService (role claim + profile)
+///  4. AppEntryScreen routes by claim; the patient app starts
+///     WearableSyncService after login. Logout unregisters the push token and
+///     stops wearable sync before FirebaseAuth.signOut().
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppConfig.logStartupDiagnostics();
 
-  // Initialize Firebase first because AuthService and wearable sync depend on Firebase instances.
+  var firebaseReady = false;
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    firebaseReady = true;
   } catch (e) {
-    print('Firebase initialization skipped: $e');
+    // Without Firebase there is no auth, no real-time data and no alerts.
+    debugPrint('Firebase initialization FAILED: $e');
+    // e.g. 'duplicate-app' after a hot restart: the default app exists.
+    firebaseReady = Firebase.apps.isNotEmpty;
   }
 
-  // Initialize services
-  final authService = AuthService();
-  await authService.init();
-
-  // Initialize wearable bridge after Firebase/Auth are ready.
-  await WearableSyncService().initialize();
-  
-  // Initialize database only for non-web platforms
-  if (!kIsWeb) {
-    try {
-      final dbService = DatabaseService();
-      await dbService.database;
-    } catch (e) {
-      print('Database initialization skipped: $e');
-    }
+  if (!firebaseReady) {
+    runApp(const _FatalStartupApp(
+      message: 'MindTwin could not start its secure connection. '
+          'Please check your internet connection and restart the app.\n\n'
+          'If you are in crisis, call your local emergency number now.',
+    ));
+    return;
   }
 
-  // Initialize notification service (skip on web if not supported)
+  // Local notifications (channels) before FCM so foreground pushes can show.
   try {
     await NotificationService.initialize();
   } catch (e) {
-    print('Notification service not available: $e');
+    debugPrint('Notification service not available: $e');
   }
-  
-  // Initialize token service for JWT auth
-  final tokenService = TokenService();
-  await tokenService.init();
-  
-  // Initialize FCM for push notifications (non-blocking, gracefully fails if not configured)
+
   if (!kIsWeb) {
-    FCMService.navigatorKey = GlobalKey<NavigatorState>();
-    FCMService().initialize().catchError((e) {
-      print('FCM not available: $e');
-    });
+    unawaited(FCMService().initialize().catchError((Object e) {
+      debugPrint('FCM not available: $e');
+    }));
+    // FCMService already starts this; calling with the explicit app name is
+    // idempotent and pins the `app` field for this build.
+    PushTokenService.instance.start(app: AppConfig.isTherapistOnlyMode ? 'therapist' : 'patient');
   }
-  
+
+  try {
+    await TokenService().init();
+  } catch (e) {
+    debugPrint('TokenService init failed: $e');
+  }
+  await AuthService().init();
+
+  if (!kIsWeb) {
+    try {
+      await DatabaseService().database;
+    } catch (e) {
+      debugPrint('Database initialization skipped: $e');
+    }
+  }
+
+  // Patient app: resume wearable sync for a persisted session. The service
+  // itself verifies the `patient` claim and APP_MODE.
+  if (!kIsWeb && FirebaseAuth.instance.currentUser != null && AppConfig.patientAccessEnabled) {
+    unawaited(WearableSyncService().startForCurrentPatient());
+  }
+
   runApp(const MindTwinApp());
 }
 
-class MindTwinApp extends StatelessWidget {
+class MindTwinApp extends StatefulWidget {
   const MindTwinApp({super.key});
 
   @override
+  State<MindTwinApp> createState() => _MindTwinAppState();
+}
+
+class _MindTwinAppState extends State<MindTwinApp> {
+  StreamSubscription<User?>? _authSub;
+  String? _lastUid;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastUid = FirebaseAuth.instance.currentUser?.uid;
+    // Safety net: if the session ends without going through AuthService.logout
+    // (token revoked, account disabled, deleted elsewhere), stop wearable
+    // sync and return to the login gate so no screen keeps showing data.
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      final wasSignedIn = _lastUid != null;
+      _lastUid = user?.uid;
+      if (user != null || !wasSignedIn) return;
+      if (AuthService().isLoggingOut) return; // caller navigates itself
+      unawaited(WearableSyncService().stop());
+      final nav = appNavigatorKey.currentState;
+      nav?.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const AppEntryScreen(notice: 'You have been signed out. Please sign in again.'),
+        ),
+        (_) => false,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final routes = <String, WidgetBuilder>{
-      '/auth': (context) => const RoleSelectionScreen(),
-    };
-
-    if (AppConfig.patientAccessEnabled) {
-      routes['/patient-auth'] = (context) => const PatientAuthScreen();
-      routes['/patient'] = (context) => const PatientHomeScreen();
-    }
-
-    if (AppConfig.therapistAccessEnabled) {
-      routes['/therapist-auth'] = (context) => const TherapistAuthScreen();
-      routes['/therapist'] = (context) => const TherapistDashboardScreen();
-    }
-
     return MaterialApp(
-      title: 'MindTwin - AI Digital Twin Mental Health',
+      title: AppConfig.isTherapistOnlyMode ? 'MindTwin Therapist' : 'MindTwin',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkMedicalTheme,
-      navigatorKey: FCMService.navigatorKey,
-      routes: routes,
+      navigatorKey: appNavigatorKey,
+      // Every named entry point goes through the claim-based gate; there are
+      // deliberately no direct '/patient' or '/therapist' routes.
+      routes: <String, WidgetBuilder>{
+        '/auth': (_) => const AppEntryScreen(),
+      },
       home: const AppEntryScreen(),
     );
   }
 }
 
-class AppEntryScreen extends StatelessWidget {
-  const AppEntryScreen({super.key});
+class _FatalStartupApp extends StatelessWidget {
+  final String message;
+  const _FatalStartupApp({required this.message});
 
   @override
   Widget build(BuildContext context) {
-    final authService = AuthService();
-    if (!authService.isAuthenticated) {
-      if (AppConfig.isPatientOnlyMode) {
-        return const PatientAuthScreen();
-      }
-      if (AppConfig.isTherapistOnlyMode) {
-        return const TherapistAuthScreen();
-      }
-      return const RoleSelectionScreen();
-    }
-
-    if (authService.currentRole == 'patient') {
-      if (!AppConfig.patientAccessEnabled) {
-        return const AppModeMismatchScreen(currentRole: 'patient');
-      }
-      return const PatientHomeScreen();
-    }
-
-    if (authService.currentRole == 'therapist') {
-      if (!AppConfig.therapistAccessEnabled) {
-        return const AppModeMismatchScreen(currentRole: 'therapist');
-      }
-      return const TherapistDashboardScreen();
-    }
-
-    // Fallback: No valid role found, return to auth
-    return AppConfig.patientAccessEnabled
-        ? const PatientAuthScreen()
-        : const TherapistAuthScreen();
-  }
-}
-
-/// Shown when the authenticated user's role is not included in this build's
-/// APP_MODE. Previously the app bounced them to the other role's login screen
-/// forever; now they get a clear explanation and a way to sign out.
-class AppModeMismatchScreen extends StatelessWidget {
-  final String currentRole;
-
-  const AppModeMismatchScreen({super.key, required this.currentRole});
-
-  Future<void> _signOut(BuildContext context) async {
-    await AuthService().logout();
-    if (!context.mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final disabledRole = currentRole == 'patient' ? 'therapist' : 'patient';
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundDark,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('⚠️', style: TextStyle(fontSize: 56)),
-              const SizedBox(height: 16),
-              Text(
-                '${currentRole[0].toUpperCase()}${currentRole.substring(1)} '
-                'access is disabled in this build',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'This app was built in ${AppConfig.modeLabel} mode '
-                '(--dart-define=APP_MODE=${AppConfig.modeLabel}), which '
-                'intentionally hides $disabledRole access. Sign out to '
-                'switch roles.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () => _signOut(context),
-                child: const Text('Sign Out'),
-              ),
-            ],
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.darkMedicalTheme,
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
           ),
         ),
       ),
     );
   }
 }
-

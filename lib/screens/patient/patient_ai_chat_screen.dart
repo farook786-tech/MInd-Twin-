@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/gemini_service.dart';
 import '../../services/ml_sentiment_service.dart';
+import '../../services/patient_crisis_reporter.dart';
 import '../../services/patient_memory_service.dart';
 import 'safety_resources_screen.dart';
 
@@ -26,7 +28,6 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
   final GeminiService _geminiService = GeminiService();
   final MlSentimentService _mlSentimentService = MlSentimentService();
   final BackendApiService _backendApi = BackendApiService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _messageController = TextEditingController();
   final List<ChatMessage> _messages = [];
   bool _isLoading = false;
@@ -96,19 +97,24 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
           timestamp: DateTime.now(),
         ));
       });
-
-      // Run after the reply is committed so an escalation dialog never pops
-      // mid-reply; _runCrisisDetection swallows its own errors.
-      await _runCrisisDetection(messageText);
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Ally is unavailable right now. Please try again in a moment.';
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Ally is unavailable right now. Please try again in a moment.';
+        });
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
+
+    // Crisis detection runs even when the AI reply failed (e.g. offline), and
+    // after the reply is committed so an escalation dialog never pops
+    // mid-reply. _runCrisisDetection swallows its own errors.
+    if (mounted) await _runCrisisDetection(messageText);
   }
 
   Future<void> _runCrisisDetection(String messageText) async {
@@ -172,6 +178,9 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
     }
   }
 
+  /// Patient-initiated `chat_crisis` event in the full crisis_events
+  /// contract shape (via [PatientCrisisReporter]). Never throws and never
+  /// blocks the escalation dialog on the network.
   Future<void> _writeCrisisEvent({
     required String message,
     required String severity,
@@ -180,33 +189,40 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
     required double confidence,
     required String modelVersion,
   }) async {
-    String therapistId = '';
-    try {
-      final userDoc = await _firestore.collection('users').doc(widget.patientId).get();
-      therapistId = (userDoc.data()?['therapistId'] ?? '').toString();
-    } catch (e) {
-      debugPrint('Failed to load therapist id for crisis event: $e');
-    }
-
-    await _firestore.collection('crisis_events').add({
-      'patientId': widget.patientId,
-      'patientName': widget.patientName,
-      'therapistId': therapistId,
-      'message': message,
-      'severity': severity,
-      'triggerLayer': triggerLayer,
-      'matchedPhrases': matchedPhrases,
-      'confidence': confidence,
-      'modelVersion': modelVersion,
-      'recommendedAction': severity == 'critical' || severity == 'high'
-          ? 'Open safety resources and contact support immediately.'
-          : 'Offer grounding and encourage therapist follow-up.',
-      'safetyPlan': severity == 'critical' || severity == 'high'
-          ? 'Move to a safe place, call local emergency services, and contact a trusted person.'
-          : 'Pause, breathe slowly, and use coping steps before deciding on next action.',
-      'acknowledged': false,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+    // Escalated decisions create a therapist alert: critical -> critical,
+    // high -> high, moderate -> medium. The low-confidence model-only
+    // 'review' result never creates crisis_events (alarm fatigue).
+    final normalizedSeverity = switch (severity.toLowerCase()) {
+      'critical' => 'critical',
+      'high' => 'high',
+      'moderate' => 'medium',
+      _ => null,
+    };
+    if (normalizedSeverity == null) return;
+    final excerpt = message.length > 500 ? '${message.substring(0, 500)}...' : message;
+    final status = PatientCrisisReporter.report(
+      eventType: 'chat_crisis',
+      severity: normalizedSeverity,
+      title: 'AI chat: possible crisis language detected',
+      message: 'Patient wrote to Ally: "$excerpt"',
+      source: 'patient_ai_chat',
+      details: {
+        'triggerLayer': triggerLayer,
+        'matchedPhrases': matchedPhrases,
+        'confidence': confidence,
+        'modelVersion': modelVersion,
+      },
+    );
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    unawaited(status.then((s) {
+      if (s != CrisisReportStatus.delivered) {
+        messenger?.showSnackBar(SnackBar(
+          content: Text(PatientCrisisReporter.describe(s)),
+          duration: const Duration(seconds: 8),
+          backgroundColor: AppTheme.riskRed,
+        ));
+      }
+    }));
   }
 
   Future<void> _handleEscalation(String severity) async {
@@ -240,21 +256,29 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
       if (!mounted) return;
 
       if (action == true) {
-        final sent = await _backendApi.sendSosAlert({
-          'patientId': widget.patientId,
-          'description': 'Patient requested immediate therapist contact during a critical conversation.',
-        });
+        final status = await PatientCrisisReporter.report(
+          eventType: 'sos',
+          severity: 'critical',
+          title: 'Patient requested immediate contact',
+          message: 'During a critical AI-chat conversation the patient asked to be connected '
+              'to their therapist immediately.',
+          source: 'patient_ai_chat',
+        );
         if (!mounted) return;
+        final sent = status == CrisisReportStatus.delivered;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              sent
-                  ? 'Your therapist has been alerted immediately.'
-                  : 'Alert queued. Please use the crisis helpline below for immediate support.',
-            ),
+            content: Text(PatientCrisisReporter.describe(status)),
             backgroundColor: sent ? AppTheme.riskRed : AppTheme.warningAmber,
+            duration: const Duration(seconds: 8),
           ),
         );
+        if (!sent) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+          );
+        }
       } else {
         Navigator.push(
           context,
@@ -272,6 +296,29 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
           timestamp: DateTime.now(),
         ));
       });
+    } else if (severity == 'moderate') {
+      setState(() {
+        _messages.add(ChatMessage(
+          id: 'care_${DateTime.now().millisecondsSinceEpoch}',
+          role: 'assistant',
+          message:
+              'It sounds like things are really hard right now. If you ever feel unsafe, '
+              'please reach out to your therapist or a crisis line - you can find them under '
+              'Safety Resources. I am here with you.',
+          timestamp: DateTime.now(),
+        ));
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Support is available any time.'),
+        duration: const Duration(seconds: 10),
+        action: SnackBarAction(
+          label: 'Safety resources',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+          ),
+        ),
+      ));
     }
   }
 
