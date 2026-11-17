@@ -1,6 +1,7 @@
 const axios = require('axios');
 const DatabaseService = require('../database/Database');
 const { v4: uuidv4 } = require('uuid');
+const { OPENROUTER_MODEL } = require('../config/aiModels');
 
 /**
  * LLM Service - OpenRouter AI Integration
@@ -10,7 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 class LLMService {
   constructor() {
     this.apiKey = process.env.OPENROUTER_API_KEY;
-    this.model = process.env.OPENROUTER_MODEL || 'openai/gpt-4-turbo';
+    this.model = OPENROUTER_MODEL;
     this.baseURL = 'https://openrouter.ai/api/v1';
     this.maxTokensPerRequest = 500; // Limit per request to preserve tokens
     this.dailyTokenBudget = 10000; // Total daily token budget

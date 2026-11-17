@@ -16,6 +16,7 @@ const clinicalRoutes = require('./src/routes/clinical');
 const realtimeRoutes = require('./src/routes/realtime');
 const chatRoutes = require('./src/routes/chat');
 const TokenBucketMiddleware = require('./src/middleware/TokenBucketMiddleware');
+const { verifyAiProviders } = require('./src/config/aiModels');
 
 let mlRoutes = null;
 let geminiRoutes = null;
@@ -164,5 +165,13 @@ const startServer = (port = BASE_PORT, attempt = 1) => {
 };
 
 startServer();
+
+// Surface dead API keys / retired models in the logs at boot instead of
+// letting AI chat silently degrade to the offline fallback reply.
+if (process.env.NODE_ENV !== 'test') {
+  verifyAiProviders().catch((error) =>
+    console.error('[AI] Provider verification failed:', error.message)
+  );
+}
 
 module.exports = app;

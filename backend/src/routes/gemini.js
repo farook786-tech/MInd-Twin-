@@ -7,14 +7,15 @@ const router = express.Router();
 // AI endpoints proxy to paid external providers; cap usage per authenticated user.
 const aiRateLimit = TokenBucketMiddleware({ capacity: 20, windowMs: 60 * 60 * 1000 });
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+const {
+  OPENROUTER_MODEL,
+  GEMINI_MODEL,
+  GEMINI_ENDPOINT,
+  isConfiguredKey,
+} = require('../config/aiModels');
 
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-const GEMINI_ENDPOINT =
-  process.env.GEMINI_ENDPOINT ||
-  'https://generativelanguage.googleapis.com/v1beta/models';
 
 const FALLBACK_TEXT =
   'I am right here with you. Take one slow breath, ground yourself in this moment, and take one step at a time.';
@@ -50,7 +51,7 @@ function mapHistory(history = []) {
  * primary, proven provider for MindTwin. Returns text or null.
  */
 async function callOpenRouter({ systemPrompt, history, prompt }) {
-  if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY.includes('YOUR_')) return null;
+  if (!isConfiguredKey(OPENROUTER_API_KEY)) return null;
   const messages = [];
   if (systemPrompt && systemPrompt.trim()) {
     messages.push({ role: 'system', content: systemPrompt });
@@ -82,7 +83,7 @@ async function callOpenRouter({ systemPrompt, history, prompt }) {
  * Returns text or null.
  */
 async function callGemini({ systemPrompt, history, prompt }) {
-  if (!GEMINI_API_KEY) return null;
+  if (!isConfiguredKey(GEMINI_API_KEY)) return null;
 
   const geminiContents = [
     ...mapHistory(history || []).map((m) => ({
