@@ -35,7 +35,6 @@ class _SimulatorTabState extends State<SimulatorTab> {
     _SimulatorIntervention('Crisis Support', '🆘', 0.42),
     _SimulatorIntervention('Increase Sessions', '📈', 0.30),
     _SimulatorIntervention('CBT Exercises', '🧠', 0.24),
-    _SimulatorIntervention('Medication Review', '💊', 0.21),
     _SimulatorIntervention('Group Therapy', '👥', 0.18),
     _SimulatorIntervention('Mindfulness', '🌬️', 0.16),
     _SimulatorIntervention('Sleep Hygiene', '🌙', 0.14),
@@ -159,8 +158,8 @@ class _SimulatorTabState extends State<SimulatorTab> {
     final therapistId = AuthService().currentUserId;
 
     if (therapistId == null) {
-      return const Center(
-        child: Text('Please sign in as therapist.', style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text('Please sign in as therapist.', style: TextStyle(color: AppColors.ink70)),
       );
     }
 
@@ -180,21 +179,21 @@ class _SimulatorTabState extends State<SimulatorTab> {
             .snapshots(),
         builder: (context, patientSnapshot) {
           if (patientSnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: AppTheme.primaryIndigo));
+            return Center(child: CircularProgressIndicator(color: AppTheme.primaryIndigo));
           }
 
           final docs = patientSnapshot.data?.docs ?? const [];
           final patients = _dedupePatients(docs);
 
           if (patientSnapshot.hasError && patients.isEmpty) {
-            return const Center(
-              child: Text('No simulator data available.', style: TextStyle(color: Colors.white70)),
+            return Center(
+              child: Text('No simulator data available.', style: TextStyle(color: AppColors.ink70)),
             );
           }
 
           if (patients.isEmpty) {
-            return const Center(
-              child: Text('No assigned patients found for simulation.', style: TextStyle(color: Colors.white70)),
+            return Center(
+              child: Text('No assigned patients found for simulation.', style: TextStyle(color: AppColors.ink70)),
             );
           }
 
@@ -249,10 +248,10 @@ class _SimulatorTabState extends State<SimulatorTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Intervention Simulator',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: AppColors.ink,
                             fontSize: 24,
                             fontWeight: FontWeight.w700,
                           ),
@@ -265,15 +264,16 @@ class _SimulatorTabState extends State<SimulatorTab> {
                               Text(
                                 'Select Patient',
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.7),
+                                  color: AppColors.ink.withValues(alpha: 0.7),
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 8),
                               DropdownButtonFormField<String>(
-                                value: selected.id,
+                                key: ValueKey(selected.id),
+                                initialValue: selected.id,
                                 dropdownColor: AppTheme.cardDark,
-                                style: const TextStyle(color: Colors.white),
+                                style: TextStyle(color: AppColors.ink),
                                 decoration: _inputDecoration(),
                                 items: patients
                                     .map(
@@ -304,8 +304,8 @@ class _SimulatorTabState extends State<SimulatorTab> {
                             children: [
                               Text(
                                 selected.name,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: AppColors.ink,
                                   fontSize: 18,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -327,20 +327,20 @@ class _SimulatorTabState extends State<SimulatorTab> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '🤖 AI Recommends for ${selected.name}:',
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                'Backend intervention ideas for ${selected.name} (unvalidated developer tool):',
+                                style: TextStyle(
+                                  color: AppColors.ink,
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: 8),
                               if (_recommendationsLoading)
-                                const LinearProgressIndicator(color: AppTheme.primaryIndigo)
+                                LinearProgressIndicator(color: AppTheme.primaryIndigo)
                               else if (_apiRecommendations.isEmpty)
                                 Text(
                                   'No recommendations received from backend yet.',
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+                                  style: TextStyle(color: AppColors.ink.withValues(alpha: 0.65)),
                                 )
                               else
                                 ..._apiRecommendations.map((rec) {
@@ -350,17 +350,17 @@ class _SimulatorTabState extends State<SimulatorTab> {
                                     decoration: BoxDecoration(
                                       color: AppTheme.backgroundDark,
                                       borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                      border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
                                     ),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           '${rec.title} • ${rec.confidence.toStringAsFixed(0)}%',
-                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                          style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w700),
                                         ),
                                         const SizedBox(height: 4),
-                                        Text(rec.reason, style: TextStyle(color: Colors.white.withValues(alpha: 0.68))),
+                                        Text(rec.reason, style: TextStyle(color: AppColors.ink.withValues(alpha: 0.68))),
                                       ],
                                     ),
                                   );
@@ -373,9 +373,9 @@ class _SimulatorTabState extends State<SimulatorTab> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Interventions',
-                                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+                                style: TextStyle(color: AppColors.ink, fontSize: 15, fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 8),
                               GridView.builder(
@@ -413,7 +413,7 @@ class _SimulatorTabState extends State<SimulatorTab> {
                                         border: Border.all(
                                           color: selectedOption
                                               ? AppTheme.primaryIndigo
-                                              : Colors.white.withValues(alpha: 0.08),
+                                              : AppColors.ink.withValues(alpha: 0.08),
                                         ),
                                       ),
                                       child: Column(
@@ -424,8 +424,8 @@ class _SimulatorTabState extends State<SimulatorTab> {
                                             '${option.icon} ${option.name}',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: Colors.white,
+                                            style: TextStyle(
+                                              color: AppColors.ink,
                                               fontSize: 12,
                                               fontWeight: FontWeight.w700,
                                             ),
@@ -434,7 +434,7 @@ class _SimulatorTabState extends State<SimulatorTab> {
                                           Text(
                                             '${(option.reduction * 100).toStringAsFixed(0)}% risk reduction',
                                             style: TextStyle(
-                                              color: Colors.white.withValues(alpha: 0.68),
+                                              color: AppColors.ink.withValues(alpha: 0.68),
                                               fontSize: 11,
                                             ),
                                           ),
@@ -452,9 +452,9 @@ class _SimulatorTabState extends State<SimulatorTab> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Before / After',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 10),
                               Row(
@@ -466,9 +466,9 @@ class _SimulatorTabState extends State<SimulatorTab> {
                                       color: risk >= 50 ? AppTheme.warningAmber : AppTheme.safeGreen,
                                     ),
                                   ),
-                                  const Padding(
+                                  Padding(
                                     padding: EdgeInsets.symmetric(horizontal: 8),
-                                    child: Icon(Icons.arrow_forward_rounded, color: Colors.white70),
+                                    child: Icon(Icons.arrow_forward_rounded, color: AppColors.ink70),
                                   ),
                                   Expanded(
                                     child: _riskBlock(
@@ -489,16 +489,16 @@ class _SimulatorTabState extends State<SimulatorTab> {
                             children: [
                               Text(
                                 'Why this works for ${selected.name}:',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 8),
                               if (_explanationLoading)
-                                const LinearProgressIndicator(color: AppTheme.primaryIndigo)
+                                LinearProgressIndicator(color: AppTheme.primaryIndigo)
                               else
                                 Text(
                                   _geminiExplanation ??
                                       'Select an intervention to request a Gemini explanation.',
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.72)),
+                                  style: TextStyle(color: AppColors.ink.withValues(alpha: 0.72)),
                                 ),
                             ],
                           ),
@@ -524,7 +524,7 @@ class _SimulatorTabState extends State<SimulatorTab> {
 
                                     if (!context.mounted) return;
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
                                           'Simulated intervention recorded (not applied to patient).',
                                         ),
@@ -556,13 +556,13 @@ class _SimulatorTabState extends State<SimulatorTab> {
             width: 125,
             child: Text(
               label,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.58), fontSize: 12),
+              style: TextStyle(color: AppColors.ink.withValues(alpha: 0.58), fontSize: 12),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+              style: TextStyle(color: AppColors.ink, fontSize: 12),
             ),
           ),
         ],
@@ -588,7 +588,7 @@ class _SimulatorTabState extends State<SimulatorTab> {
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
+            style: TextStyle(color: AppColors.ink, fontSize: 22, fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -601,11 +601,11 @@ class _SimulatorTabState extends State<SimulatorTab> {
       fillColor: AppTheme.backgroundDark,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppTheme.primaryIndigo),
+        borderSide: BorderSide(color: AppTheme.primaryIndigo),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
     );
@@ -625,7 +625,7 @@ class _CardSurface extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: child,
     );

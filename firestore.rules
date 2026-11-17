@@ -100,7 +100,7 @@ service cloud.firestore {
       return ['name', 'phone', 'photoUrl', 'settings',
               'latestRiskScore', 'latestRiskState', 'latestWellbeingScore',
               'latestMoodScore', 'lastCheckInAt', 'latestVitals',
-              'latestPhq9', 'latestGad7', 'streak', 'latestMood'];
+              'latestPhq9', 'latestGad7', 'latestCssrs', 'streak', 'latestMood'];
     }
     // {total, severity, at}
     function validScoreSnapshot(s, maxTotal) {
@@ -123,8 +123,17 @@ service cloud.firestore {
         && (!('latestVitals' in keys) || d.latestVitals is map)
         && (!('latestPhq9' in keys) || d.latestPhq9 == null || validScoreSnapshot(d.latestPhq9, 27))
         && (!('latestGad7' in keys) || d.latestGad7 == null || validScoreSnapshot(d.latestGad7, 21))
+        && (!('latestCssrs' in keys) || d.latestCssrs == null || validCssrsSnapshot(d.latestCssrs))
         && (!('streak' in keys) || (d.streak is int && d.streak >= 0 && d.streak <= 100000))
         && (!('latestMood' in keys) || d.latestMood == null || (d.latestMood is string && d.latestMood.size() <= 64));
+    }
+    // {risk, at} — latest C-SSRS screener triage (drives the therapist roster sort).
+    function validCssrsSnapshot(s) {
+      return s is map
+        && s.keys().hasOnly(['risk', 'at'])
+        && s.keys().hasAll(['risk', 'at'])
+        && s.risk in ['none', 'low', 'moderate', 'high']
+        && s.at is timestamp;
     }
     // Same bounds as functions/src/logic/vitals.js THRESHOLD_BOUNDS.
     // high > low is checked against the defaults (120 / 45) for a missing side.
@@ -190,11 +199,33 @@ service cloud.firestore {
     }
 
     // ----------------------------------------------------------------- vitals
-    function validVital(d) {
-      return d.keys().hasOnly(['patientId', 'therapistId', 'type', 'value', 'unit',
-                               'measuredAt', 'source', 'createdAt'])
-        && d.keys().hasAll(['patientId', 'therapistId', 'type', 'value', 'unit',
-                            'measuredAt', 'source', 'createdAt'])
+    // Three heart-rate shapes (docs/DATA_MODEL.md "Free-tier budget"):
+    //  * 5-minute window: + {min, max, sampleCount, windowStart}; id
+    //    `${patientId}_heart_rate_${windowStartMillis}`; measuredAt = window end.
+    //  * immediate out-of-range sample: + {immediate: true}.
+    //  * legacy single reading (older app versions) / sleep / steps: base keys only.
+    function vitalBaseKeys() {
+      return ['patientId', 'therapistId', 'type', 'value', 'unit',
+              'measuredAt', 'source', 'createdAt'];
+    }
+    function validHrWindow(d, vitalId) {
+      return d.type == 'heart_rate'
+        && d.keys().hasAll(['min', 'max', 'sampleCount', 'windowStart'])
+        && !('immediate' in d)
+        && d.windowStart is timestamp
+        && d.windowStart.toMillis() % 300000 == 0
+        && d.measuredAt == d.windowStart + duration.value(5, 'm')
+        && vitalId == d.patientId + '_heart_rate_' + string(d.windowStart.toMillis())
+        && d.sampleCount is int && d.sampleCount >= 1 && d.sampleCount <= 3000
+        && d.min is number && d.max is number
+        && d.min >= 20 && d.max <= 250 && d.min <= d.max
+        // value is the mean rounded to whole bpm; min/max are rounded to 0.1.
+        && d.value >= d.min - 1 && d.value <= d.max + 1;
+    }
+    function validVital(d, vitalId) {
+      return d.keys().hasOnly(vitalBaseKeys().concat(['min', 'max', 'sampleCount',
+                                                      'windowStart', 'immediate']))
+        && d.keys().hasAll(vitalBaseKeys())
         && ((d.type == 'heart_rate' && d.unit == 'bpm')
             || (d.type == 'sleep' && d.unit == 'hours')
             || (d.type == 'steps' && d.unit == 'count'))
@@ -202,13 +233,53 @@ service cloud.firestore {
         && d.measuredAt is timestamp
         && d.measuredAt <= request.time + duration.value(5, 'm')
         && d.source in ['wear_os', 'health_connect']
-        && d.createdAt == request.time;
+        && d.createdAt == request.time
+        && (('windowStart' in d)
+              ? validHrWindow(d, vitalId)
+              : (('immediate' in d)
+                  ? (d.type == 'heart_rate' && d.immediate == true
+                     && !d.keys().hasAny(['min', 'max', 'sampleCount']))
+                  : !d.keys().hasAny(['min', 'max', 'sampleCount'])));
     }
     match /vitals/{vitalId} {
       allow read: if canReadPatientDoc();
       allow create: if isOwnPatientStamp(request.resource.data)
-        && validVital(request.resource.data);
+        && validVital(request.resource.data, vitalId);
       allow update, delete: if false;
+    }
+
+    // ----------------------------------------------------------- vitals_daily
+    // One summary per patient per LOCAL day, merged by the patient app
+    // (id `${patientId}_${yyyy-MM-dd}`). Read by the patient and their therapist.
+    function vitalsDailyFields() {
+      return ['patientId', 'therapistId', 'date', 'hrRestingEstimate', 'hrAvg',
+              'hrMin', 'hrMax', 'hrWindows', 'sleepHours', 'steps', 'updatedAt'];
+    }
+    function validVitalsDaily(d, dailyId) {
+      return d.keys().hasOnly(vitalsDailyFields())
+        && d.keys().hasAll(['patientId', 'therapistId', 'date', 'updatedAt'])
+        && d.date is string
+        && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && dailyId == d.patientId + '_' + d.date
+        && d.updatedAt == request.time
+        && optNumberIn(d, 'hrRestingEstimate', 20, 250)
+        && optNumberIn(d, 'hrAvg', 20, 250)
+        && optNumberIn(d, 'hrMin', 20, 250)
+        && optNumberIn(d, 'hrMax', 20, 250)
+        && optNumberIn(d, 'hrWindows', 0, 400)
+        && optNumberIn(d, 'sleepHours', 0, 24)
+        && optNumberIn(d, 'steps', 0, 200000);
+    }
+    match /vitals_daily/{dailyId} {
+      allow read: if canReadPatientDoc();
+      allow create: if isOwnPatientStamp(request.resource.data)
+        && validVitalsDaily(request.resource.data, dailyId);
+      // set(..., merge: true) by the owner; identity fields never change.
+      allow update: if isOwnPatientStamp(request.resource.data)
+        && resource.data.patientId == uid()
+        && request.resource.data.date == resource.data.date
+        && validVitalsDaily(request.resource.data, dailyId);
+      allow delete: if false;
     }
 
     // ------------------------------------------------------------- daily_logs
@@ -253,10 +324,46 @@ service cloud.firestore {
               'phq9Severity', 'phq9Score', 'gad7Score', 'gad7Answers', 'gad7Severity',
               'answers', 'timestamp', 'clientCreatedAt', 'legacyQueued'];
     }
+    // C-SSRS Screener, Screen Version - Recent (Columbia Lighthouse Project).
+    // Skip logic: q3-q5 only when q2 is yes (else null); q6Recent only when q6
+    // is yes (else null). Mirrors lib/services/clinical_scoring.dart and
+    // functions/src/logic/cssrs.js.
+    function validCssrsAnswers(a) {
+      return a is map
+        && a.keys().hasOnly(['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q6Recent'])
+        && a.keys().hasAll(['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q6Recent'])
+        && a.q1 is bool && a.q2 is bool && a.q6 is bool
+        && ((a.q2 == true && a.q3 is bool && a.q4 is bool && a.q5 is bool)
+            || (a.q2 == false && a.q3 == null && a.q4 == null && a.q5 == null))
+        && ((a.q6 == true && a.q6Recent is bool) || (a.q6 == false && a.q6Recent == null));
+    }
+    // Columbia triage: Q4/Q5/Q6-recent => high; Q3/Q6-lifetime => moderate;
+    // Q1/Q2 => low. The stored cssrsRisk must match the answers.
+    function cssrsRiskOf(a) {
+      return (a.q4 == true || a.q5 == true || (a.q6 == true && a.q6Recent == true)) ? 'high'
+        : ((a.q3 == true || (a.q6 == true && a.q6Recent == false)) ? 'moderate'
+        : ((a.q1 == true || a.q2 == true) ? 'low' : 'none'));
+    }
+    function validCssrsAssessment(d) {
+      return d.keys().hasOnly(['patientId', 'therapistId', 'type', 'cssrsAnswers', 'cssrsRisk',
+                               'timestamp', 'clientCreatedAt'])
+        && d.keys().hasAll(['patientId', 'therapistId', 'type', 'cssrsAnswers', 'cssrsRisk',
+                            'timestamp', 'clientCreatedAt'])
+        && d.type == 'cssrs'
+        && d.timestamp == request.time
+        && d.clientCreatedAt is timestamp
+        && validCssrsAnswers(d.cssrsAnswers)
+        && d.cssrsRisk == cssrsRiskOf(d.cssrsAnswers);
+    }
+
     match /clinical_assessments/{assessmentId} {
       allow read: if canReadPatientDoc();
-      // Legacy offline uploads (legacyQueued: true) may omit most optional keys.
       allow create: if isOwnPatientStamp(request.resource.data)
+        && request.resource.data.get('type', '') == 'cssrs'
+        && validCssrsAssessment(request.resource.data);
+      // PHQ-9 / GAD-7. Legacy offline uploads (legacyQueued: true) may omit most optional keys.
+      allow create: if isOwnPatientStamp(request.resource.data)
+        && request.resource.data.get('type', '') != 'cssrs'
         && request.resource.data.keys().hasOnly(assessmentFields())
         && request.resource.data.timestamp is timestamp
         && request.resource.data.timestamp <= request.time + duration.value(5, 'm')
@@ -297,6 +404,44 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.patientId == uid();
     }
 
+    // ----------------------------------------------------------- safety_plans
+    // Stanley-Brown safety plan, one doc per patient (lib/services/safety_plan_service.dart).
+    // Per-item caps (500 chars per entry, contact name 100, phone 32) are enforced
+    // in the app (SafetyPlan.contentFields); rules cannot iterate list items.
+    function safetyPlanContentKeys() {
+      return ['warningSigns', 'copingStrategies', 'distractionsPeople', 'helpContacts',
+              'professionals', 'environmentSafety', 'reasonsToLive'];
+    }
+    function safetyPlanAllKeys() {
+      return safetyPlanContentKeys().concat(['patientId', 'therapistId', 'updatedAt', 'updatedBy']);
+    }
+    function spList(d, k) { return !(k in d) || (d[k] is list && d[k].size() <= 20); }
+    function validSafetyPlan(d) {
+      return d.keys().hasOnly(safetyPlanAllKeys())
+        && spList(d, 'warningSigns') && spList(d, 'copingStrategies')
+        && spList(d, 'distractionsPeople') && spList(d, 'helpContacts')
+        && spList(d, 'professionals') && spList(d, 'reasonsToLive')
+        && optString(d, 'environmentSafety', 2000)
+        && d.updatedAt == request.time && d.updatedBy == uid();
+    }
+    match /safety_plans/{patientId} {
+      allow read: if signedIn() && (uid() == patientId || isTherapistOf(patientId));
+      // Patient: full doc, stamped with current therapistId (null if unlinked).
+      allow create, update: if isOwnPatientStamp(request.resource.data)
+        && request.resource.data.patientId == patientId
+        && validSafetyPlan(request.resource.data);
+      // Current therapist: may draft (create) or edit content only.
+      allow create: if isTherapistOf(patientId)
+        && request.resource.data.patientId == patientId
+        && request.resource.data.therapistId == uid()
+        && validSafetyPlan(request.resource.data);
+      allow update: if isTherapistOf(patientId)
+        && changedKeys().hasOnly(safetyPlanContentKeys().concat(['therapistId', 'updatedAt', 'updatedBy']))
+        && request.resource.data.therapistId == uid()
+        && validSafetyPlan(request.resource.data);
+      allow delete: if false;
+    }
+
     // -------------------------------------------------------------- reminders
     match /reminders/{reminderId} {
       allow read: if signedIn() && resource.data.patientId == uid();
@@ -322,8 +467,8 @@ service cloud.firestore {
     match /crisis_events/{eventId} {
       allow read: if canReadPatientDoc();
 
-      // Patients raise sos / checkin_crisis / chat_crisis, and phq9_severe only
-      // under the id assessment_<assessmentId>, for themselves.
+      // Patients raise sos / checkin_crisis / chat_crisis, and phq9_severe /
+      // cssrs_high only under the id assessment_<assessmentId>, for themselves.
       allow create: if isOwnPatientStamp(request.resource.data)
         // Optional diagnostics (clientCreatedAt/source/details) are tolerated
         // so a crisis report is never rejected over non-security metadata.
@@ -341,7 +486,12 @@ service cloud.firestore {
             // the same deterministic id onAssessmentCreated uses (dedupe).
             || (request.resource.data.eventType == 'phq9_severe'
                 && eventId.matches('assessment_[A-Za-z0-9_-]{1,200}')
-                && request.resource.data.severity in ['critical', 'high']))
+                && request.resource.data.severity in ['critical', 'high'])
+            // Immediate on-device C-SSRS HIGH alert (Q4/Q5/Q6-recent), same
+            // deterministic id as onAssessmentCreated; always critical.
+            || (request.resource.data.eventType == 'cssrs_high'
+                && eventId.matches('assessment_[A-Za-z0-9_-]{1,200}')
+                && request.resource.data.severity == 'critical'))
         && request.resource.data.severity in ['critical', 'high', 'medium']
         && request.resource.data.acknowledged == false
         && request.resource.data.timestamp == request.time

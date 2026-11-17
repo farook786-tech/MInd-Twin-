@@ -9,6 +9,8 @@
  * Factory: TokenBucketMiddleware({ capacity, windowMs })
  *   - capacity: tokens granted per window (default 10)
  *   - windowMs: refill window length in ms (default 1 hour)
+ *   - keyFn: optional (req) => string bucket key. Use a prefix to keep a
+ *     limiter's buckets separate from other limiters (all share one map).
  */
 const buckets = new Map();
 const IDLE_BUCKET_TTL_MS = 24 * 60 * 60 * 1000; // drop buckets idle for 24h
@@ -29,11 +31,12 @@ function pruneBuckets() {
 const TokenBucketMiddleware = (options = {}) => {
   const capacity = options.capacity ?? 10;
   const windowMs = options.windowMs ?? 60 * 60 * 1000;
+  const keyFn = typeof options.keyFn === 'function' ? options.keyFn : null;
 
   return (req, res, next) => {
     pruneBuckets();
 
-    const key = req.userId || req.ip || 'unknown';
+    const key = (keyFn && keyFn(req)) || req.userId || req.ip || 'unknown';
     const now = Date.now();
 
     let bucket = buckets.get(key);

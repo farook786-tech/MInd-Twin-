@@ -53,10 +53,10 @@ class RoleSelectionScreen extends StatelessWidget {
                 ),
                       const SizedBox(height: 24),
                 
-                      const Text(
+                      Text(
                   'MindTwin',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.ink,
                     fontSize: 36,
                     fontWeight: FontWeight.bold,
                   ),
@@ -65,7 +65,7 @@ class RoleSelectionScreen extends StatelessWidget {
                       Text(
                   'AI Digital Twin Mental Health Platform',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: AppColors.ink.withValues(alpha: 0.7),
                     fontSize: 16,
                   ),
                   textAlign: TextAlign.center,
@@ -73,10 +73,10 @@ class RoleSelectionScreen extends StatelessWidget {
                       const SizedBox(height: 48),
                 
                       // Role Selection Title
-                      const Text(
+                      Text(
                   'I am a...',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.ink,
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
                   ),
@@ -128,10 +128,10 @@ class RoleSelectionScreen extends StatelessWidget {
                       Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: AppColors.ink.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
+                      color: AppColors.ink.withValues(alpha: 0.1),
                     ),
                   ),
                   child: Row(
@@ -146,7 +146,7 @@ class RoleSelectionScreen extends StatelessWidget {
                                 ? 'Patient app mode enabled (${AppConfig.modeLabel}). Therapist access is intentionally hidden.'
                                 : 'Therapist app mode enabled (${AppConfig.modeLabel}). Patient access is intentionally hidden.',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: AppColors.ink.withValues(alpha: 0.6),
                             fontSize: 12,
                           ),
                         ),
@@ -214,8 +214,8 @@ class RoleSelectionScreen extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: AppColors.ink,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
@@ -224,7 +224,7 @@ class RoleSelectionScreen extends StatelessWidget {
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: AppColors.ink.withValues(alpha: 0.6),
                       fontSize: 14,
                     ),
                   ),

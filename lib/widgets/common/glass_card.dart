@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 
 class GlassCard extends StatelessWidget {
@@ -36,7 +35,7 @@ class GlassCard extends StatelessWidget {
       return InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(borderRadius),
-        splashColor: (glowColor ?? AppColors.primaryCyan).withOpacity(0.1),
+        splashColor: (glowColor ?? AppColors.primaryCyan).withValues(alpha: 0.1),
         highlightColor: Colors.transparent,
         child: cardContent,
       );

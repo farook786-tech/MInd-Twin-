@@ -309,7 +309,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     _subtitle,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: AppColors.ink.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -341,12 +341,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.lock_outline_rounded,
-                  size: 48, color: Colors.white.withValues(alpha: 0.6)),
+                  size: 48, color: AppColors.ink.withValues(alpha: 0.6)),
               const SizedBox(height: 16),
               Text(
                 _accessError!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 15),
+                style: TextStyle(color: AppColors.ink, fontSize: 15),
               ),
               const SizedBox(height: 16),
               OutlinedButton(onPressed: _start, child: const Text('Retry')),
@@ -365,7 +365,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           child: Text(
             _streamError!,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7)),
           ),
         ),
       );
@@ -413,10 +413,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Start a conversation',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.ink,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
@@ -425,7 +425,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             Text(
               'Send a message to begin',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
+                color: AppColors.ink.withValues(alpha: 0.5),
                 fontSize: 14,
               ),
             ),
@@ -442,7 +442,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _dayLabel(time),
         style: TextStyle(
           fontSize: 12,
-          color: Colors.white.withValues(alpha: 0.5),
+          color: AppColors.ink.withValues(alpha: 0.5),
         ),
       ),
     );
@@ -455,7 +455,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+          top: BorderSide(color: AppColors.ink.withValues(alpha: 0.1), width: 1),
         ),
       ),
       child: SafeArea(
@@ -468,12 +468,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   color: AppTheme.backgroundDark,
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: AppColors.ink.withValues(alpha: 0.1),
                   ),
                 ),
                 child: TextField(
                   controller: _messageController,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.ink),
                   minLines: 1,
                   maxLines: 5,
                   textCapitalization: TextCapitalization.sentences,
@@ -481,7 +481,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   decoration: InputDecoration(
                     hintText: 'Type a message...',
                     hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
+                      color: AppColors.ink.withValues(alpha: 0.4),
                     ),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(
@@ -496,14 +496,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(width: 12),
             Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: AppTheme.primaryIndigo,
                 shape: BoxShape.circle,
               ),
               child: IconButton(
                 onPressed: canSend ? _sendMessage : null,
                 icon: const Icon(Icons.send_rounded, size: 20),
-                color: Colors.white,
+                color: AppColors.ink,
                 tooltip: 'Send',
               ),
             ),
@@ -514,7 +514,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildMessageBubble(ChatMessage message, bool isMine) {
-    final faded = Colors.white.withValues(alpha: isMine ? 0.7 : 0.5);
+    final faded = AppColors.ink.withValues(alpha: isMine ? 0.7 : 0.5);
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -535,7 +535,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           border: isMine
               ? null
-              : Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              : Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
         ),
         child: Column(
           crossAxisAlignment:
@@ -543,8 +543,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           children: [
             SelectableText(
               message.text,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.ink,
                 fontSize: 15,
                 height: 1.4,
               ),
@@ -572,7 +572,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// failed (!) / sending (clock) / sent (single tick) / read (double tick).
   Widget _buildStatusIcon(ChatMessage message) {
     if (_failed.containsKey(message.id)) {
-      return const Tooltip(
+      return Tooltip(
         message: 'Not delivered',
         child: Icon(Icons.error_outline, size: 14, color: AppTheme.riskRed),
       );
@@ -581,7 +581,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return Tooltip(
         message: 'Sending',
         child: Icon(Icons.schedule_rounded,
-            size: 13, color: Colors.white.withValues(alpha: 0.7)),
+            size: 13, color: AppColors.ink.withValues(alpha: 0.7)),
       );
     }
     if (message.read) {
@@ -594,7 +594,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return Tooltip(
       message: 'Sent',
       child: Icon(Icons.done_rounded,
-          size: 15, color: Colors.white.withValues(alpha: 0.7)),
+          size: 15, color: AppColors.ink.withValues(alpha: 0.7)),
     );
   }
 

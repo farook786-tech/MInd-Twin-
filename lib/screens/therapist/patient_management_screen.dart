@@ -31,7 +31,7 @@ class _PatientManagementScreenState extends State<PatientManagementScreen> {
       final patients = await _dbService.getAllPatients();
       setState(() => _patients = patients);
     } catch (e) {
-      print('Error loading patients: $e');
+      debugPrint('Error loading patients: $e');
     }
   }
 
@@ -100,7 +100,7 @@ class _PatientManagementScreenState extends State<PatientManagementScreen> {
               label: const Text('Add New Patient'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primaryIndigo,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.ink,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 12,
@@ -150,10 +150,10 @@ class _PatientManagementScreenState extends State<PatientManagementScreen> {
                     children: [
                       Text(
                         patient.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: AppColors.ink,
                         ),
                       ),
                       const SizedBox(height: 4),

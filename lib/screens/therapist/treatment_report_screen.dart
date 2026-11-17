@@ -168,7 +168,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w400,
-                color: Colors.white.withValues(alpha: 0.6),
+                color: AppColors.ink.withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: 8),
@@ -201,15 +201,15 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Clinical Report Suite',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.ink,
               fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
@@ -219,7 +219,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
             'Generate hospital-grade PDF reports for clinical documentation. '
             'All reports are based on real collected patient data.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
+              color: AppColors.ink.withValues(alpha: 0.6),
               fontSize: 12,
             ),
           ),
@@ -247,10 +247,10 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Comprehensive Treatment Report',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.ink,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -259,7 +259,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                     Text(
                       'Full clinical analysis with PHQ-9 trajectory',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppColors.ink.withValues(alpha: 0.5),
                         fontSize: 10,
                       ),
                     ),
@@ -272,7 +272,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
+              color: AppColors.ink.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -281,7 +281,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                 Text(
                   'Includes:',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: AppColors.ink.withValues(alpha: 0.7),
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
@@ -290,9 +290,9 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                 _buildReportItem('Executive Summary'),
                 _buildReportItem('PHQ-9 Score Trajectory'),
                 _buildReportItem('Treatment Response Analysis'),
-                _buildReportItem('Risk Factor Assessment'),
+                _buildReportItem('Validated Instruments (PHQ-9, GAD-7, C-SSRS)'),
                 _buildReportItem('Current Treatment Plan'),
-                _buildReportItem('Clinical Recommendations'),
+                _buildReportItem('Clinician Notes (clinician-authored)'),
               ],
             ),
           ),
@@ -308,7 +308,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(
-                          Colors.white.withValues(alpha: 0.7),
+                          AppColors.ink.withValues(alpha: 0.7),
                         ),
                       ),
                     )
@@ -316,7 +316,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
               label: Text(_generatingTreatment ? 'Generating...' : 'Generate Report'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.ink,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -348,10 +348,10 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Progress Report (Quick View)',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.ink,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -360,7 +360,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                     Text(
                       'Simple summary of recent assessments',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppColors.ink.withValues(alpha: 0.5),
                         fontSize: 10,
                       ),
                     ),
@@ -373,7 +373,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
+              color: AppColors.ink.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -382,7 +382,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                 Text(
                   'Includes:',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: AppColors.ink.withValues(alpha: 0.7),
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
@@ -407,7 +407,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(
-                          Colors.white.withValues(alpha: 0.7),
+                          AppColors.ink.withValues(alpha: 0.7),
                         ),
                       ),
                     )
@@ -415,7 +415,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
               label: Text(_generatingProgress ? 'Generating...' : 'Generate Report'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.ink,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -447,10 +447,10 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Wearable Data Summary',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.ink,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -459,7 +459,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                     Text(
                       'Real-time health metrics from last 30 days',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppColors.ink.withValues(alpha: 0.5),
                         fontSize: 10,
                       ),
                     ),
@@ -472,7 +472,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
+              color: AppColors.ink.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -481,7 +481,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                 Text(
                   'Includes:',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: AppColors.ink.withValues(alpha: 0.7),
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
@@ -507,7 +507,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(
-                          Colors.white.withValues(alpha: 0.7),
+                          AppColors.ink.withValues(alpha: 0.7),
                         ),
                       ),
                     )
@@ -515,7 +515,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
               label: Text(_generatingWearable ? 'Generating...' : 'Generate Report'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.ink,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -538,7 +538,7 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
           Text(
             item,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
+              color: AppColors.ink.withValues(alpha: 0.6),
               fontSize: 10,
             ),
           ),
@@ -574,13 +574,13 @@ class _TreatmentReportScreenState extends State<TreatmentReportScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '• All reports are hospital-grade clinical documents\n'
+            '• Draft documents for review by the treating clinician\n'
             '• Based on real collected patient data (PHQ-9, wearables, behavioral data)\n'
             '• Use for clinical documentation and treatment planning\n'
             '• Update regularly to track treatment progress\n'
-            '• Include evidence-based recommendations',
+            '• Decision support only: not a diagnosis or prescription',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
+              color: AppColors.ink.withValues(alpha: 0.7),
               fontSize: 11,
               height: 1.5,
             ),

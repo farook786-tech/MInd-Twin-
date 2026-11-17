@@ -71,7 +71,8 @@ class GeminiService {
             prompt.contains('suicide') ||
             prompt.contains('self-harm') ||
             prompt.contains('kill myself'))) {
-      return 'I hear you and I am here for you. Please reach out right now to a trusted person or local emergency crisis support (988).';
+      return 'I hear you and I am here for you. Please reach out right now to a trusted person, '
+          'or call Tele-MANAS on 14416 (free, 24x7). If you are in immediate danger, call 112.';
     }
 
     // Backend enforced its per-user rate limit (429) - do not burn direct

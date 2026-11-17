@@ -69,13 +69,13 @@ class AuthScaffold extends StatelessWidget {
                     Text(
                       title,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: AppColors.ink, fontSize: 26, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       subtitle,
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
+                      style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7), fontSize: 14),
                     ),
                     const SizedBox(height: 32),
                     ...children,
@@ -164,30 +164,30 @@ class _AuthTextFieldState extends State<AuthTextField> {
         autofillHints: widget.autofillHints,
         textInputAction: widget.textInputAction ?? TextInputAction.next,
         autocorrect: false,
-        style: const TextStyle(color: Colors.white),
+        style: TextStyle(color: AppColors.ink),
         decoration: InputDecoration(
           labelText: widget.label,
           hintText: widget.hint,
           prefixIcon: Icon(widget.icon, color: AppTheme.primaryIndigo),
           suffixIcon: widget.isPassword
               ? IconButton(
-                  icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: Colors.white54),
+                  icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: AppColors.ink54),
                   onPressed: () => setState(() => _obscure = !_obscure),
                   tooltip: _obscure ? 'Show password' : 'Hide password',
                 )
               : null,
           filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.06),
-          labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+          fillColor: AppColors.ink.withValues(alpha: 0.06),
+          labelStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.8)),
+          hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.4)),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+            borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.2)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: AppTheme.primaryIndigo, width: 2),
+            borderSide: BorderSide(color: AppTheme.primaryIndigo, width: 2),
           ),
         ),
       ),
@@ -209,15 +209,15 @@ class AuthPrimaryButton extends StatelessWidget {
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.primaryIndigo,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.ink,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         onPressed: loading ? null : onPressed,
         child: loading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.ink),
               )
             : Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
       ),

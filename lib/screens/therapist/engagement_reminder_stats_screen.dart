@@ -33,7 +33,7 @@ class _EngagementReminderStatsScreenState
         await _loadStats();
       }
     } catch (e) {
-      print('Error initializing: $e');
+      debugPrint('Error initializing: $e');
     }
   }
 
@@ -92,7 +92,7 @@ class _EngagementReminderStatsScreenState
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
-                color: Colors.white.withValues(alpha: 0.6),
+                color: AppColors.ink.withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: 8),
@@ -107,7 +107,7 @@ class _EngagementReminderStatsScreenState
               label: const Text('Refresh'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.indigo,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.ink,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 shape: RoundedRectangleBorder(
@@ -157,15 +157,15 @@ class _EngagementReminderStatsScreenState
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Key Metrics',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.ink,
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
@@ -240,7 +240,7 @@ class _EngagementReminderStatsScreenState
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
+              color: AppColors.ink.withValues(alpha: 0.6),
               fontSize: 10,
               fontWeight: FontWeight.w500,
             ),
@@ -279,7 +279,7 @@ class _EngagementReminderStatsScreenState
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,10 +287,10 @@ class _EngagementReminderStatsScreenState
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Risk Distribution',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                 ),
@@ -368,7 +368,7 @@ class _EngagementReminderStatsScreenState
                         Text(
                           '$count patients ($percentage%)',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: AppColors.ink.withValues(alpha: 0.6),
                             fontSize: 10,
                           ),
                         ),
@@ -380,7 +380,7 @@ class _EngagementReminderStatsScreenState
                       child: LinearProgressIndicator(
                         value: total > 0 ? count / total : 0,
                         minHeight: 6,
-                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        backgroundColor: AppColors.ink.withValues(alpha: 0.1),
                         valueColor: AlwaysStoppedAnimation<Color>(levelColor),
                       ),
                     ),
@@ -428,15 +428,15 @@ class _EngagementReminderStatsScreenState
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Reminders by Schedule',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.ink,
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
@@ -445,7 +445,7 @@ class _EngagementReminderStatsScreenState
           Text(
             'Active reminders grouped by frequency tier',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: AppColors.ink.withValues(alpha: 0.5),
               fontSize: 10,
             ),
           ),
@@ -483,8 +483,8 @@ class _EngagementReminderStatsScreenState
                           const SizedBox(width: 8),
                           Text(
                             freq.key,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: AppColors.ink,
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),
@@ -529,15 +529,15 @@ class _EngagementReminderStatsScreenState
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'System Status',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.ink,
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
@@ -554,10 +554,10 @@ class _EngagementReminderStatsScreenState
                 ),
               ),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Reminder Engine',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
@@ -584,7 +584,7 @@ class _EngagementReminderStatsScreenState
           Text(
             'Last evaluation: $lastReminderTime',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: AppColors.ink.withValues(alpha: 0.5),
               fontSize: 10,
             ),
           ),
@@ -600,7 +600,7 @@ class _EngagementReminderStatsScreenState
               'ℹ Reminders are evaluated every 30 minutes automatically. '
               'Frequency adjusts based on each patient\'s real-time dropout risk.',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
+                color: AppColors.ink.withValues(alpha: 0.6),
                 fontSize: 10,
                 height: 1.4,
               ),
@@ -638,15 +638,15 @@ class _EngagementReminderStatsScreenState
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Recommendations',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.ink,
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
@@ -660,7 +660,7 @@ class _EngagementReminderStatsScreenState
                 child: Text(
                   rec,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: AppColors.ink.withValues(alpha: 0.7),
                     fontSize: 11,
                     height: 1.4,
                   ),

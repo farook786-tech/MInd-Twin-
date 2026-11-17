@@ -19,10 +19,10 @@ class BreathingExerciseScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text(
+              Text(
                 'Inhale for 4, hold for 4, exhale for 6.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
+                style: TextStyle(color: AppColors.ink, fontSize: 20, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 24),
               ElevatedButton(

@@ -151,14 +151,14 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
             icon: const Icon(Icons.more_vert_rounded),
             color: AppTheme.cardDark,
             onSelected: _handleQuickAction,
-            itemBuilder: (context) => const [
+            itemBuilder: (context) => [
               PopupMenuItem<String>(
                 value: 'invite',
                 child: Row(
                   children: [
-                    Icon(Icons.qr_code_rounded, color: Colors.white70, size: 18),
+                    Icon(Icons.qr_code_rounded, color: AppColors.ink70, size: 18),
                     SizedBox(width: 10),
-                    Text('Your Invite Code', style: TextStyle(color: Colors.white)),
+                    Text('Your Invite Code', style: TextStyle(color: AppColors.ink)),
                   ],
                 ),
               ),
@@ -166,9 +166,9 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
                 value: 'alerts',
                 child: Row(
                   children: [
-                    Icon(Icons.notifications_active_rounded, color: Colors.white70, size: 18),
+                    Icon(Icons.notifications_active_rounded, color: AppColors.ink70, size: 18),
                     SizedBox(width: 10),
-                    Text('Real-Time Alerts', style: TextStyle(color: Colors.white)),
+                    Text('Real-Time Alerts', style: TextStyle(color: AppColors.ink)),
                   ],
                 ),
               ),
@@ -176,9 +176,9 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
                 value: 'reports',
                 child: Row(
                   children: [
-                    Icon(Icons.description_rounded, color: Colors.white70, size: 18),
+                    Icon(Icons.description_rounded, color: AppColors.ink70, size: 18),
                     SizedBox(width: 10),
-                    Text('Clinical Reports', style: TextStyle(color: Colors.white)),
+                    Text('Clinical Reports', style: TextStyle(color: AppColors.ink)),
                   ],
                 ),
               ),
@@ -186,9 +186,9 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
                 value: 'analytics',
                 child: Row(
                   children: [
-                    Icon(Icons.analytics_rounded, color: Colors.white70, size: 18),
+                    Icon(Icons.analytics_rounded, color: AppColors.ink70, size: 18),
                     SizedBox(width: 10),
-                    Text('Reminder Analytics', style: TextStyle(color: Colors.white)),
+                    Text('Reminder Analytics', style: TextStyle(color: AppColors.ink)),
                   ],
                 ),
               ),
@@ -197,9 +197,9 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
                 value: 'profile',
                 child: Row(
                   children: [
-                    Icon(Icons.person_outline_rounded, color: Colors.white70, size: 18),
+                    Icon(Icons.person_outline_rounded, color: AppColors.ink70, size: 18),
                     SizedBox(width: 10),
-                    Text('Profile', style: TextStyle(color: Colors.white)),
+                    Text('Profile', style: TextStyle(color: AppColors.ink)),
                   ],
                 ),
               ),
@@ -229,7 +229,7 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
             },
             backgroundColor: AppTheme.cardDark,
             indicatorColor: AppTheme.primaryIndigo.withValues(alpha: 0.3),
-            leading: const Padding(
+            leading: Padding(
               padding: EdgeInsets.all(16.0),
               child: Column(
                 children: [
@@ -255,7 +255,7 @@ class _TherapistDashboardScreenState extends State<TherapistDashboardScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Divider(color: Colors.white12, height: 12),
+                  Divider(color: AppColors.ink12, height: 12),
                   IconButton(
                     onPressed: _logout,
                     icon: const Icon(Icons.logout_rounded),

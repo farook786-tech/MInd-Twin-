@@ -123,3 +123,32 @@ test('alert text includes value and threshold', () => {
   assert.match(message, /130 bpm/);
   assert.match(message, /120 bpm/);
 });
+
+test('vitalDocKind: window / immediate / single', () => {
+  const win = doc({ value: 72, min: 60, max: 130, sampleCount: 5, windowStart: ts(NOW - 300000) });
+  assert.equal(v.vitalDocKind(win), 'window');
+  assert.equal(v.vitalDocKind(doc({ value: 131, immediate: true })), 'immediate');
+  assert.equal(v.vitalDocKind(doc()), 'single');
+  assert.equal(v.vitalDocKind(doc({ type: 'sleep', unit: 'hours', value: 6 })), 'single');
+  assert.equal(v.vitalDocKind(null), 'single');
+});
+
+test('aggregate windows are skipped by the trigger; immediates and singles are evaluated', () => {
+  const win = doc({ value: 72, min: 60, max: 130, sampleCount: 5, windowStart: ts(NOW - 300000) });
+  assert.equal(v.skipVitalTrigger(win), true);
+  assert.equal(v.skipVitalTrigger(doc({ value: 131, immediate: true })), false);
+  assert.equal(v.skipVitalTrigger(doc({ value: 131 })), false);
+  // The immediate doc still validates and alerts exactly like a legacy single reading.
+  const imm = v.validateVitalReading(doc({ value: 131, immediate: true }));
+  assert.equal(imm.ok, true);
+  assert.equal(v.evaluateVital(imm.reading, v.DEFAULT_THRESHOLDS).eventType, 'vital_high');
+});
+
+test('windowBreach reports min/max breaches of an aggregate (reporting only)', () => {
+  const t = v.DEFAULT_THRESHOLDS;
+  const w = (min, max) => doc({ value: 80, min, max, sampleCount: 5, windowStart: ts(NOW - 300000) });
+  assert.equal(v.windowBreach(w(60, 130), t), 'high');
+  assert.equal(v.windowBreach(w(40, 90), t), 'low');
+  assert.equal(v.windowBreach(w(60, 120), t), null); // boundary is not a breach (strict >, <)
+  assert.equal(v.windowBreach(doc({ value: 200 }), t), null); // not a window
+});

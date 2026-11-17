@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
@@ -10,14 +9,20 @@ import '../../core/widgets/twin_chart.dart';
 import '../../models/appointment_v2.dart';
 import '../../services/appointment_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/clinical_scoring.dart';
+import '../../services/sos_launch_bridge.dart';
+import '../../services/sos_reporter.dart';
+import '../../widgets/emergency_help_sheet.dart';
 import '../chat/chat_screen.dart';
 import '../shared/profile_screen.dart';
+import 'cssrs_screener_screen.dart';
 import 'daily_checkin_screen.dart';
 import 'ethics_control_screen.dart';
 import 'my_twin_screen.dart';
 import 'patient_ai_chat_screen.dart';
 import 'patient_appointments_screen.dart';
 import 'phq9_assessment_screen.dart';
+import 'safety_plan_screen.dart';
 import 'safety_resources_screen.dart';
 import 'voice_journal_screen.dart';
 
@@ -46,6 +51,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   Future<int>? _streakFuture;
 
   String? get _patientId => _authService.currentUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    // Watch SOS notification tap -> Safety Resources (native SosLaunchBridge).
+    WidgetsBinding.instance.addPostFrameCallback((_) => SosLaunchBridge.attach());
+  }
 
   void _ensureStreams(String patientId) {
     if (_streamsFor == patientId) return;
@@ -115,38 +127,31 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
   _RiskBand _riskBand(double score) {
     if (score <= 24) {
-      return const _RiskBand(
+      return _RiskBand(
         color: AppTheme.safeGreen,
-        label: 'Low Risk',
+        label: 'Little strain reported',
         emoji: '😊',
       );
     }
     if (score <= 49) {
-      return const _RiskBand(
+      return _RiskBand(
         color: AppTheme.warningAmber,
-        label: 'Moderate',
+        label: 'Some strain reported',
         emoji: '😐',
       );
     }
     if (score <= 74) {
       return const _RiskBand(
         color: Color(0xFFFF9800),
-        label: 'High Risk',
+        label: 'High strain reported',
         emoji: '😔',
       );
     }
-    return const _RiskBand(
+    return _RiskBand(
       color: AppTheme.riskRed,
-      label: 'Critical',
+      label: 'Very high strain reported',
       emoji: '😰',
     );
-  }
-
-  String _riskLevelForUserField(double score) {
-    if (score <= 24) return 'low';
-    if (score <= 49) return 'moderate';
-    if (score <= 74) return 'high';
-    return 'critical';
   }
 
   String _trendText(double latest, double previous) {
@@ -327,8 +332,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         children: [
           Text(
             '$greeting, $name',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.ink,
               fontSize: 20,
               fontWeight: FontWeight.w700,
             ),
@@ -341,7 +346,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
               latestRiskScore: latestRiskScore,
             ),
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
+              color: AppColors.ink.withValues(alpha: 0.85),
               fontSize: 14,
               fontWeight: FontWeight.w500,
               height: 1.35,
@@ -368,10 +373,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Complete check-in to see your risk',
+                Text(
+                  'Check-in wellbeing indicator: —\nComplete a check-in to see it',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.ink,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -388,25 +393,24 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
         final normalizedRisk = riskScore.clamp(0.0, 100.0);
         final riskBand = _riskBand(normalizedRisk);
-        final userRiskLevel = _toStringOrNull(userData?['latestRiskState']) ??
-            _toStringOrNull(userData?['latestRiskLevel']);
-        final riskLevelText = userRiskLevel ?? _riskLevelForUserField(normalizedRisk);
 
+        // A self-report heuristic from the daily check-in, NOT a risk
+        // prediction or a diagnosis (docs/CLINICAL_SAFETY_CASE.md).
         return AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Risk Score',
+              Text(
+                'Check-in wellbeing indicator',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 6),
               Text(
-                '${normalizedRisk.toStringAsFixed(0)}% $riskLevelText ${riskBand.emoji}',
+                '${normalizedRisk.toStringAsFixed(0)}/100 ${riskBand.emoji}',
                 style: TextStyle(
                   color: riskBand.color,
                   fontSize: 18,
@@ -431,7 +435,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                       !trendSnapshot.hasData) {
                     return Text(
                       'Loading trend...',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+                      style: TextStyle(color: AppColors.ink.withValues(alpha: 0.75)),
                     );
                   }
 
@@ -458,7 +462,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                   return Text(
                     '${_trendText(latestRisk, previousRisk)} vs yesterday',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: AppColors.ink.withValues(alpha: 0.9),
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                     ),
@@ -486,8 +490,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             return AppCard(
               child: Text(
                 _streakText(0),
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: AppColors.ink,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
@@ -512,8 +516,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         children: [
           Text(
             _streakText(streak),
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.ink,
               fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
@@ -524,7 +528,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             child: LinearProgressIndicator(
               minHeight: 8,
               value: progress / 100.0,
-              backgroundColor: Colors.white.withValues(alpha: 0.12),
+              backgroundColor: AppColors.ink.withValues(alpha: 0.12),
               color: AppTheme.primaryIndigo,
             ),
           ),
@@ -532,7 +536,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           Text(
             '$progress% of your 7-day goal',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
+              color: AppColors.ink.withValues(alpha: 0.75),
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
@@ -601,7 +605,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                 Text(
                   'Check in daily to see your trend 💙',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: AppColors.ink.withValues(alpha: 0.8),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -651,7 +655,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor:
                     checkedInToday ? AppTheme.safeGreen.withValues(alpha: 0.25) : AppTheme.primaryIndigo,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.ink,
                 minimumSize: const Size(double.infinity, 64),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -687,8 +691,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: AppColors.ink,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -724,7 +728,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             );
           },
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
+        item(
+          emoji: '🧭',
+          label: 'Safety Check-in',
+          onTap: () => _openCssrs('patient_home'),
+        ),
+        const SizedBox(width: 8),
         item(
           emoji: '🛡️',
           label: 'Safety',
@@ -736,6 +746,50 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           },
         ),
       ],
+    );
+  }
+
+  void _openCssrs(String source) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => CssrsScreenerScreen(source: source)),
+    );
+  }
+
+  /// Weekly C-SSRS screener prompt (users.latestCssrs.at older than 7 days or
+  /// never). An offer only: the screener itself has a "Not now" option.
+  Widget _buildWeeklySafetyPrompt(Map<String, dynamic>? userData) {
+    final snap = userData?['latestCssrs'];
+    final lastAt = snap is Map ? _toDateTime(snap['at']) : null;
+    if (!ClinicalScoring.isCssrsDue(lastAt, DateTime.now())) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: AppCard(
+        onTap: () => _openCssrs('weekly_prompt'),
+        child: Row(
+          children: [
+            const Text('🧭', style: TextStyle(fontSize: 24)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Weekly safety check-in',
+                    style: TextStyle(color: AppColors.ink, fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'A few standard questions about how safe you have been feeling. About a minute.',
+                    style: TextStyle(color: AppColors.ink.withValues(alpha: 0.8), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: AppColors.ink54),
+          ],
+        ),
+      ),
     );
   }
 
@@ -757,7 +811,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             child: Text(
               'Could not load your sessions. Tap to open.\n'
               '${AppointmentService.describeError(snapshot.error!)}',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: TextStyle(color: AppColors.ink70, fontSize: 13),
             ),
           );
         }
@@ -778,13 +832,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         final pendingLabel =
             '$pendingCount session request${pendingCount == 1 ? '' : 's'} pending';
 
-        const titleStyle = TextStyle(
-          color: Colors.white,
+        final titleStyle = TextStyle(
+          color: AppColors.ink,
           fontSize: 15,
           fontWeight: FontWeight.w700,
         );
         final subStyle = TextStyle(
-          color: Colors.white.withValues(alpha: 0.8),
+          color: AppColors.ink.withValues(alpha: 0.8),
           fontSize: 13,
         );
 
@@ -813,7 +867,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right, color: Colors.white70),
+                Icon(Icons.chevron_right, color: AppColors.ink70),
               ],
             ),
           );
@@ -828,12 +882,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
               Row(
                 children: [
                   Icon(next.isVirtual ? Icons.videocam : Icons.location_on,
-                      color: Colors.white70, size: 20),
+                      color: AppColors.ink70, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('Next session with ${next.therapistName}', style: titleStyle),
                   ),
-                  const Icon(Icons.chevron_right, color: Colors.white70),
+                  Icon(Icons.chevron_right, color: AppColors.ink70),
                 ],
               ),
               const SizedBox(height: 6),
@@ -861,35 +915,30 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   // SOS
   // ---------------------------------------------------------------------------
 
-  static const List<_EmergencyContact> _emergencyContacts = [
-    _EmergencyContact('Emergency services (international / EU / India)', '112'),
-    _EmergencyContact('Emergency services (US / Canada)', '911'),
-    _EmergencyContact('Emergency services (UK)', '999'),
-    _EmergencyContact('Suicide & Crisis Lifeline (US / Canada)', '988'),
-    _EmergencyContact('Samaritans (UK / Ireland)', '116123'),
-    _EmergencyContact('Tele-MANAS mental health helpline (India)', '14416'),
-  ];
-
+  /// SOS: confirm, write the `sos` crisis event (queued by Firestore when
+  /// offline), then show India emergency numbers. If the server has not
+  /// acknowledged within ~8 s or the device is offline, the sheet also offers
+  /// "Text my trusted contact" (SMS app, pre-filled, patient presses send)
+  /// and "Call 14416". Nothing is ever sent silently.
   Future<void> _onSosPressed() async {
     if (_sosInProgress) return;
-    final patientId = _patientId;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: const Text('Send SOS alert?', style: TextStyle(color: Colors.white)),
-        content: const Text(
+        title: Text('Send SOS alert?', style: TextStyle(color: AppColors.ink)),
+        content: Text(
           'Your therapist will be alerted immediately that you need urgent help. '
           'Emergency numbers will be shown next.',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.ink70),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.riskRed,
-              foregroundColor: Colors.white,
+              foregroundColor: AppColors.ink,
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Send SOS'),
@@ -900,122 +949,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
     if (confirmed != true || !mounted) return;
 
     setState(() => _sosInProgress = true);
-    String status;
-    var sent = false;
-    try {
-      if (patientId == null) {
-        status = 'The alert could not be sent: you are signed out.';
-      } else {
-        final userDoc = await _firestore
-            .collection('users')
-            .doc(patientId)
-            .get()
-            .timeout(const Duration(seconds: 8));
-        final userData = userDoc.data();
-        final therapistId = _toStringOrNull(userData?['therapistId']);
-        final patientName = _toStringOrNull(userData?['name']) ?? 'Patient';
-        if (therapistId == null) {
-          status = 'The alert could not be sent: you are not linked to a therapist yet.';
-        } else {
-          await _firestore.collection('crisis_events').add({
-            'patientId': patientId,
-            'therapistId': therapistId,
-            'patientName': patientName,
-            'eventType': 'sos',
-            'severity': 'critical',
-            'title': 'SOS alert',
-            'message': '$patientName pressed the SOS button and needs urgent help.',
-            'acknowledged': false,
-            'timestamp': FieldValue.serverTimestamp(),
-          }).timeout(const Duration(seconds: 10));
-          sent = true;
-          status = 'Your therapist has been alerted.';
-        }
-      }
-    } on TimeoutException {
-      status = 'The alert could not be sent right now (no connection). It will be '
-          'delivered automatically when you are back online — please call for help directly.';
-    } catch (_) {
-      status = 'The alert could not be sent. Please call for help directly.';
-    }
+    final outcome = await SosReporter.sendFromPhone(source: 'patient_home_sos');
     if (mounted) setState(() => _sosInProgress = false);
-
     if (!mounted) return;
-    await _showEmergencyNumbers(status: status, sent: sent);
-  }
-
-  Future<void> _callNumber(String number) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final ok = await launchUrl(Uri(scheme: 'tel', path: number));
-      if (!ok) {
-        messenger.showSnackBar(SnackBar(content: Text('Please dial $number manually.')));
-      }
-    } catch (_) {
-      messenger.showSnackBar(SnackBar(content: Text('Please dial $number manually.')));
-    }
-  }
-
-  Future<void> _showEmergencyNumbers({required String status, required bool sent}) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppTheme.cardDark,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(sent ? Icons.check_circle : Icons.error,
-                      color: sent ? AppTheme.safeGreen : AppTheme.warningAmber),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(status,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'If you are in immediate danger, call your local emergency number now.',
-                style: TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 8),
-              ..._emergencyContacts.map(
-                (c) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.phone, color: AppTheme.riskRed),
-                  title: Text(c.number,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
-                  subtitle: Text(c.label, style: const TextStyle(color: Colors.white60)),
-                  onTap: () => _callNumber(c.number),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
-                  );
-                },
-                icon: const Icon(Icons.shield_outlined),
-                label: const Text('More safety resources'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    await showEmergencyHelpSheet(context, status: outcome.message, delivered: outcome.delivered);
   }
 
   Widget _buildSosButton() {
@@ -1026,15 +963,15 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         onPressed: _sosInProgress ? null : _onSosPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.riskRed,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.ink,
           disabledBackgroundColor: AppTheme.riskRed.withValues(alpha: 0.5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
         icon: _sosInProgress
-            ? const SizedBox(
+            ? SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ink),
               )
             : const Icon(Icons.sos),
         label: const Text(
@@ -1051,19 +988,19 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       builder: (context, userSnapshot) {
         if (userSnapshot.connectionState == ConnectionState.waiting &&
             !userSnapshot.hasData) {
-          return const Center(
+          return Center(
             child: Text(
               'Loading home data...',
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: AppColors.ink),
             ),
           );
         }
 
         if (userSnapshot.hasError && !userSnapshot.hasData) {
-          return const Center(
+          return Center(
             child: Text(
               'Could not load home data.',
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: AppColors.ink),
             ),
           );
         }
@@ -1079,11 +1016,24 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
               _buildGreetingCard(userData),
               const SizedBox(height: 14),
               _buildSosButton(),
-              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SafetyPlanScreen()),
+                  ),
+                  icon: const Icon(Icons.assignment_turned_in_outlined, size: 18),
+                  label: const Text('My safety plan'),
+                ),
+              ),
+              const SizedBox(height: 4),
               _buildStartMyDayCard(patientId),
               const SizedBox(height: 14),
               _buildUpcomingSessionCard(patientId),
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
+              _buildWeeklySafetyPrompt(userData),
+              const SizedBox(height: 4),
               const SectionHeader(title: 'Today at a Glance', emoji: '📊'),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1127,7 +1077,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         title: const Text('🧠 MindTwin'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.sos, color: AppTheme.riskRed),
+            icon: Icon(Icons.sos, color: AppTheme.riskRed),
             tooltip: 'SOS',
             onPressed: _sosInProgress ? null : _onSosPressed,
           ),
@@ -1204,10 +1154,4 @@ class _RiskBand {
     required this.label,
     required this.emoji,
   });
-}
-
-class _EmergencyContact {
-  final String label;
-  final String number;
-  const _EmergencyContact(this.label, this.number);
 }

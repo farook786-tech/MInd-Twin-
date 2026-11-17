@@ -4,6 +4,20 @@ Server side of the data contract in `docs/DATA_MODEL.md`: roles (custom
 claims), therapist linking, clinical threshold checks, push notifications and
 meeting links. Project: `mindtwin-60879`, region `us-central1`, runtime Node 22.
 
+> **No budget?** Everything below also runs on the free Spark plan without
+> deploying functions: the backend serves the callables at
+> `POST /api/callable/:name` and runs the triggers as Firestore listeners,
+> using the same code (`src/core`, `src/logic`). See
+> [`docs/FREE_DEPLOYMENT.md`](../docs/FREE_DEPLOYMENT.md).
+>
+> Code layout: `src/core/*` holds the logic as plain functions
+> (`callables`: `(authContext, data) => result` throwing `CallableError`;
+> `triggers`: `(snapshot, ctx)` / `({before, after}, ctx)`), built with
+> injected Firebase SDK objects (`src/runtime.js` here,
+> `backend/src/firebase/coreLoader.js` in the backend). `src/callables.js` and
+> `src/triggers/*.js` are thin firebase-functions wrappers. `src/core` and
+> `src/logic` must not `require` any npm package.
+
 ## What is deployed
 
 | Function | Kind | Purpose |

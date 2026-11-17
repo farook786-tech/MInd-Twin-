@@ -90,19 +90,19 @@ class _FederatedTabState extends State<FederatedTab> {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Care Transfer Hub',
-            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            style: TextStyle(color: AppColors.ink, fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
           Text(
             'Track what has been sent from therapist tools to patient apps.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.65)),
           ),
         ],
       ),
@@ -145,7 +145,7 @@ class _FederatedTabState extends State<FederatedTab> {
           Text(
             label,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.65), fontSize: 12),
           ),
         ],
       ),
@@ -158,21 +158,21 @@ class _FederatedTabState extends State<FederatedTab> {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Therapist Workflow',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+            style: TextStyle(color: AppColors.ink, fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 10),
           Text(
             '1. Create treatment plan or appointment in patient tools.\n'
             '2. Confirm "Send to patient" when prompted.\n'
             '3. Verify delivery records below in this hub.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.72), height: 1.5),
+            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.72), height: 1.5),
           ),
           const SizedBox(height: 12),
           Row(
@@ -264,7 +264,7 @@ class _FederatedTabState extends State<FederatedTab> {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -274,12 +274,12 @@ class _FederatedTabState extends State<FederatedTab> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: AppColors.ink, fontSize: 16, fontWeight: FontWeight.w600),
                 ),
               ),
               Text(
                 '$count',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                style: TextStyle(color: AppColors.ink.withValues(alpha: 0.6), fontSize: 12),
               ),
             ],
           ),
@@ -287,7 +287,7 @@ class _FederatedTabState extends State<FederatedTab> {
           if (children.isEmpty)
             Text(
               emptyText,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+              style: TextStyle(color: AppColors.ink.withValues(alpha: 0.65)),
             )
           else
             ...children,
@@ -319,7 +319,7 @@ class _FederatedTabState extends State<FederatedTab> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 3),
                 Row(
@@ -327,7 +327,7 @@ class _FederatedTabState extends State<FederatedTab> {
                     Expanded(
                       child: Text(
                         subtitle,
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+                        style: TextStyle(color: AppColors.ink.withValues(alpha: 0.65), fontSize: 12),
                       ),
                     ),
                     Row(
@@ -348,7 +348,7 @@ class _FederatedTabState extends State<FederatedTab> {
                             ],
                           )
                         else
-                          Icon(Icons.circle_outlined, size: 12, color: Colors.white.withValues(alpha: 0.3)),
+                          Icon(Icons.circle_outlined, size: 12, color: AppColors.ink.withValues(alpha: 0.3)),
                         if (patientAccepted) ...[
                           const SizedBox(width: 8),
                           Row(

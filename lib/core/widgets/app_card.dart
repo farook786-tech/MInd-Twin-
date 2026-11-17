@@ -29,7 +29,7 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color ?? AppTheme.cardDark,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
       ),
       child: Material(
         color: Colors.transparent,
@@ -67,8 +67,8 @@ class SectionHeader extends StatelessWidget {
           Flexible(
             child: Text(
               emoji == null ? title : '$emoji  $title',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.ink,
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
               ),
@@ -109,7 +109,7 @@ class EmptyState extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
+              color: AppColors.ink.withValues(alpha: 0.85),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -141,7 +141,7 @@ class LegendChip extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
+            color: AppColors.ink.withValues(alpha: 0.85),
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),

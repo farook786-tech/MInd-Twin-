@@ -296,7 +296,7 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
                   Text(
                     'Share your thoughts and feelings',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: AppColors.ink.withValues(alpha: 0.6),
                       fontSize: 14,
                     ),
                     textAlign: TextAlign.center,
@@ -341,7 +341,7 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
                       child: Icon(
                         _isRecording ? Icons.stop : Icons.mic,
                         size: 60,
-                        color: Colors.white,
+                        color: AppColors.ink,
                       ),
                     ),
                   ),
@@ -351,7 +351,7 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
                   if (_isRecording)
                     Text(
                       '${(_recordingDuration ~/ 60).toString().padLeft(2, '0')}:${(_recordingDuration % 60).toString().padLeft(2, '0')}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.riskRed,
@@ -359,11 +359,11 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
                       ),
                     )
                   else
-                    const Text(
+                    Text(
                       'Tap to record',
                       style: TextStyle(
                         fontSize: 16,
-                        color: Colors.white60,
+                        color: AppColors.ink60,
                       ),
                     ),
                 ],
@@ -400,13 +400,13 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                const Icon(Icons.mic, color: AppTheme.primaryIndigo, size: 20),
+                                Icon(Icons.mic, color: AppTheme.primaryIndigo, size: 20),
                               ],
                             ),
                             Text(
                               journal['date']?.toString().split('T')[0] ?? 'Unknown',
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.6),
+                                color: AppColors.ink.withValues(alpha: 0.6),
                                 fontSize: 12,
                               ),
                             ),
@@ -417,13 +417,13 @@ class _VoiceJournalScreenState extends State<VoiceJournalScreen> {
                           journal['transcription'] ?? 'Voice journal entry',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          style: TextStyle(color: AppColors.ink70, fontSize: 13),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           '⏱️ ${journal['duration'] ?? 0}s',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color: AppColors.ink.withValues(alpha: 0.5),
                             fontSize: 11,
                           ),
                         ),

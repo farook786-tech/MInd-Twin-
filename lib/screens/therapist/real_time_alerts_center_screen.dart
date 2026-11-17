@@ -23,8 +23,8 @@ class RealTimeAlertsCenterScreen extends StatelessWidget {
       return Scaffold(
         backgroundColor: AppTheme.backgroundDark,
         appBar: AppBar(backgroundColor: AppTheme.cardDark, title: const Text('Real-Time Alerts Center')),
-        body: const Center(
-          child: Text('Please sign in as therapist.', style: TextStyle(color: Colors.white70)),
+        body: Center(
+          child: Text('Please sign in as therapist.', style: TextStyle(color: AppColors.ink70)),
         ),
       );
     }
@@ -97,7 +97,7 @@ class _AlertList extends StatelessWidget {
           return _ErrorState(error: snapshot.error);
         }
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: AppTheme.primaryIndigo));
+          return Center(child: CircularProgressIndicator(color: AppTheme.primaryIndigo));
         }
 
         final docs = snapshot.data!.docs;
@@ -162,7 +162,7 @@ class _AlertCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   '$patientName - $title',
-                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+                  style: TextStyle(color: AppColors.ink, fontSize: 15, fontWeight: FontWeight.w700),
                 ),
               ),
               _SeverityChip(severity: severity, color: color),
@@ -170,7 +170,7 @@ class _AlertCard extends StatelessWidget {
           ),
           if (message.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(message, style: const TextStyle(color: Colors.white70)),
+            Text(message, style: TextStyle(color: AppColors.ink70)),
           ],
           if (vitalLine != null) ...[
             const SizedBox(height: 6),
@@ -181,7 +181,7 @@ class _AlertCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     vitalLine,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -190,13 +190,13 @@ class _AlertCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             timestamp == null ? 'Time pending sync' : '${_relative(timestamp)} (${_absolute(timestamp)})',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7), fontSize: 12),
           ),
           if (acknowledged) ...[
             const SizedBox(height: 4),
             Text(
               acknowledgedAt == null ? 'Acknowledged' : 'Acknowledged ${_absolute(acknowledgedAt)}',
-              style: const TextStyle(color: AppTheme.safeGreen, fontSize: 12, fontWeight: FontWeight.w600),
+              style: TextStyle(color: AppTheme.safeGreen, fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ],
           const SizedBox(height: 10),
@@ -205,17 +205,17 @@ class _AlertCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               if (patientId.isNotEmpty)
-                _btn(label: 'Call Patient', color: Colors.white, onTap: () => _callPatient(context, patientId)),
+                _btn(label: 'Call Patient', color: AppColors.ink, onTap: () => _callPatient(context, patientId)),
               if (patientId.isNotEmpty)
                 _btn(
                   label: 'Send Message',
-                  color: Colors.white,
+                  color: AppColors.ink,
                   onTap: () => _sendSafetyMessage(context, patientId, patientName),
                 ),
               if (patientId.isNotEmpty)
                 _btn(
                   label: 'Open Chat',
-                  color: Colors.white,
+                  color: AppColors.ink,
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -266,11 +266,11 @@ class _AlertCard extends StatelessWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: Text('Message $patientName', style: const TextStyle(color: Colors.white)),
+        title: Text('Message $patientName', style: TextStyle(color: AppColors.ink)),
         content: TextField(
           controller: controller,
           maxLines: 5,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.ink),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
@@ -380,11 +380,11 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle_rounded, size: 56, color: AppTheme.safeGreen),
+            Icon(Icons.check_circle_rounded, size: 56, color: AppTheme.safeGreen),
             const SizedBox(height: 10),
-            Text(title, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
+            Text(title, style: TextStyle(color: AppColors.ink, fontSize: 20, fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
-            Text(subtitle, style: const TextStyle(color: Colors.white70)),
+            Text(subtitle, style: TextStyle(color: AppColors.ink70)),
           ],
         ),
       ),
@@ -412,17 +412,17 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, size: 48, color: AppTheme.riskRed),
+            Icon(Icons.error_outline_rounded, size: 48, color: AppTheme.riskRed),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'Alerts could not be loaded',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+              style: TextStyle(color: AppColors.ink, fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
             Text(
               'Alerts may exist that are not shown. ${_errorText(error)}',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70),
+              style: TextStyle(color: AppColors.ink70),
             ),
           ],
         ),
@@ -506,9 +506,13 @@ String _eventTypeLabel(String type) {
     case 'chat_crisis':
       return 'Crisis language in chat';
     case 'high_risk':
-      return 'High risk score';
+      return 'High check-in indicator';
     case 'phq9_severe':
       return 'Severe PHQ-9';
+    case 'cssrs_high':
+      return 'C-SSRS high risk';
+    case 'cssrs_moderate':
+      return 'C-SSRS moderate risk';
     case 'vital_high':
       return 'Vital above threshold';
     case 'vital_low':
@@ -525,6 +529,8 @@ IconData _eventIcon(String type) {
     case 'chat_crisis':
       return Icons.chat_bubble_rounded;
     case 'phq9_severe':
+    case 'cssrs_high':
+    case 'cssrs_moderate':
       return Icons.assignment_late_rounded;
     case 'sos':
       return Icons.sos_rounded;

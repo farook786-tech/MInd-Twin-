@@ -67,7 +67,7 @@ class _EngagementMonitoringDashboardState
                 color: AppTheme.primaryIndigo.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.people_outline_rounded,
+              child: Icon(Icons.people_outline_rounded,
                   color: AppTheme.primaryIndigo, size: 20),
             ),
             const SizedBox(width: 12),
@@ -116,7 +116,7 @@ class _EngagementMonitoringDashboardState
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.2),
@@ -128,10 +128,10 @@ class _EngagementMonitoringDashboardState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Risk Distribution',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.ink,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -171,15 +171,15 @@ class _EngagementMonitoringDashboardState
                 ],
               ),
             ),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Low (0)', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
-                  Text('Medium (30)', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
-                  Text('High (50)', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
-                  Text('Critical (70)', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
+                  Text('Low (0)', style: TextStyle(color: AppColors.ink, fontSize: 10, fontWeight: FontWeight.w600)),
+                  Text('Medium (30)', style: TextStyle(color: AppColors.ink, fontSize: 10, fontWeight: FontWeight.w600)),
+                  Text('High (50)', style: TextStyle(color: AppColors.ink, fontSize: 10, fontWeight: FontWeight.w600)),
+                  Text('Critical (70)', style: TextStyle(color: AppColors.ink, fontSize: 10, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -214,7 +214,7 @@ class _EngagementMonitoringDashboardState
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: AppColors.ink.withValues(alpha: 0.5),
               fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
@@ -232,7 +232,7 @@ class _EngagementMonitoringDashboardState
           child: Text(
             'No patients assigned yet',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: AppColors.ink.withValues(alpha: 0.5),
             ),
           ),
         ),
@@ -250,10 +250,10 @@ class _EngagementMonitoringDashboardState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Patient Engagement Status',
           style: TextStyle(
-            color: Colors.white,
+            color: AppColors.ink,
             fontSize: 16,
             fontWeight: FontWeight.w700,
           ),
@@ -332,8 +332,8 @@ class _EngagementMonitoringDashboardState
                   children: [
                     Text(
                       patient['name'] as String,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.ink,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -342,7 +342,7 @@ class _EngagementMonitoringDashboardState
                     Text(
                       patient['email'] as String,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppColors.ink.withValues(alpha: 0.5),
                         fontSize: 11,
                       ),
                     ),
@@ -385,7 +385,7 @@ class _EngagementMonitoringDashboardState
                       Text(
                         'Dropout Risk',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
+                          color: AppColors.ink.withValues(alpha: 0.7),
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -408,7 +408,7 @@ class _EngagementMonitoringDashboardState
                 child: LinearProgressIndicator(
                   value: dropoutRisk / 100,
                   minHeight: 8,
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                  backgroundColor: AppColors.ink.withValues(alpha: 0.1),
                   valueColor: AlwaysStoppedAnimation<Color>(riskColor),
                 ),
               ),
@@ -467,7 +467,7 @@ class _EngagementMonitoringDashboardState
           Text(
             'Last calculated: just now',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.3),
+              color: AppColors.ink.withValues(alpha: 0.3),
               fontSize: 10,
             ),
           ),
@@ -501,7 +501,7 @@ class _EngagementMonitoringDashboardState
                 Text(
                   label,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
+                    color: AppColors.ink.withValues(alpha: 0.4),
                     fontSize: 8,
                     fontWeight: FontWeight.w600,
                   ),

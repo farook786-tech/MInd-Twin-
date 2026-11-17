@@ -65,7 +65,10 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
       final aiText = await _geminiService.generateResponseAdvanced(
         systemPrompt:
           'You are an AI clinical assistant helping therapists. '
-          'Provide evidence-based recommendations. Be concise and professional. '
+          'Summarise evidence and suggest clinical workflow steps only. Never recommend, name, '
+          'start, stop or adjust a specific medication or dose; say that medication decisions '
+          'require assessment by the treating psychiatrist. You do not diagnose. '
+          'Be concise and professional. '
           'Keep responses under 150 words.',
         userPrompt:
           'Patient: ${widget.patientName} (${widget.patientId}). Therapist question: $messageText',
@@ -119,12 +122,12 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
               color: AppTheme.riskRed.withValues(alpha: 0.2),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline, color: AppTheme.riskRed),
+                  Icon(Icons.error_outline, color: AppTheme.riskRed),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       _errorMessage!,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: AppColors.ink),
                     ),
                   ),
                 ],
@@ -143,7 +146,7 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                         Text(
                           'Clinical AI Assistant',
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: Colors.white,
+                                color: AppColors.ink,
                               ),
                         ),
                         const SizedBox(height: 8),
@@ -152,7 +155,7 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                           child: Text(
                             'Ask questions about patient assessment, treatment planning, or clinical insights.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7)),
                           ),
                         ),
                       ],
@@ -188,7 +191,7 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                               margin: const EdgeInsets.symmetric(vertical: 8),
                               decoration: BoxDecoration(
                                 color: isTherapist ? Colors.blue[600] : AppTheme.cardDark,
-                                border: !isTherapist ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
+                                border: !isTherapist ? Border.all(color: AppColors.ink.withValues(alpha: 0.1)) : null,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Column(
@@ -198,8 +201,8 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                                 children: [
                                   Text(
                                     message.message,
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
+                                      color: AppColors.ink,
                                       fontSize: 15,
                                       height: 1.4,
                                     ),
@@ -210,8 +213,8 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: isTherapist
-                                          ? Colors.white70
-                                          : Colors.white54,
+                                          ? AppColors.ink70
+                                          : AppColors.ink54,
                                     ),
                                   ),
                                 ],
@@ -223,7 +226,7 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                               padding: const EdgeInsets.only(left: 8.0),
                               child: CircleAvatar(
                                 backgroundColor: Colors.blue[300],
-                                child: const Icon(Icons.person, color: Colors.white),
+                                child: Icon(Icons.person, color: AppColors.ink),
                               ),
                             ),
                         ],
@@ -250,7 +253,7 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Text('AI is analyzing...', style: TextStyle(color: Colors.white70)),
+                    Text('AI is analyzing...', style: TextStyle(color: AppColors.ink70)),
                   ],
                 ),
               ),
@@ -267,7 +270,7 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
             decoration: BoxDecoration(
               color: AppTheme.cardDark,
               border: Border(
-                top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                top: BorderSide(color: AppColors.ink.withValues(alpha: 0.1)),
               ),
             ),
             child: Row(
@@ -275,29 +278,29 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                 Expanded(
                   child: TextField(
                     controller: _messageController,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: AppColors.ink),
                     decoration: InputDecoration(
                       hintText: 'Ask about treatment, assessment, or interventions...',
-                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                      hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.5)),
                       fillColor: AppTheme.backgroundDark,
                       filled: true,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.2)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.2)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: const BorderSide(color: AppTheme.primaryIndigo, width: 1.5),
+                        borderSide: BorderSide(color: AppTheme.primaryIndigo, width: 1.5),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
                       ),
-                      prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                      prefixIcon: Icon(Icons.search, color: AppColors.ink70),
                     ),
                     textCapitalization: TextCapitalization.sentences,
                     maxLines: 3,
@@ -316,7 +319,7 @@ class _TherapistAIChatScreenState extends State<TherapistAIChatScreen> {
                   disabledElevation: 0,
                   child: Icon(
                     Icons.send,
-                    color: _isLoading ? Colors.grey : Colors.white,
+                    color: _isLoading ? Colors.grey : AppColors.ink,
                   ),
                 ),
               ],

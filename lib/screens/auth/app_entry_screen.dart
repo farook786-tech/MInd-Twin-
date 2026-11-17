@@ -93,7 +93,7 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
   Widget build(BuildContext context) {
     final d = _destination;
     if (d != null) return d;
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: AppTheme.backgroundDark,
       body: Center(child: CircularProgressIndicator()),
     );

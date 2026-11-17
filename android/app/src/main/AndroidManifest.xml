@@ -77,6 +77,14 @@
                     android:host="*"
                     android:pathPrefix="/mindtwin/hr" />
             </intent-filter>
+            <!-- Watch SOS (WearSosHandler): writes a crisis_events doc + phone notification. -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/mindtwin/sos" />
+            </intent-filter>
         </service>
 
         <!-- Default FCM channel for notifications without an explicit channel. -->
@@ -100,6 +108,15 @@
         <package android:name="com.google.android.apps.healthdata" />
         <intent>
             <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
+        <!-- url_launcher tel: / sms: (crisis helplines, trusted-contact SMS). -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="sms" />
         </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

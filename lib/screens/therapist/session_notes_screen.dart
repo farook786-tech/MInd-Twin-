@@ -76,8 +76,8 @@ class _SessionNotesScreenState extends State<SessionNotesScreen> {
         ),
       ),
       body: _stream == null
-          ? const Center(
-              child: Text('Please sign in again.', style: TextStyle(color: Colors.white)),
+          ? Center(
+              child: Text('Please sign in again.', style: TextStyle(color: AppColors.ink)),
             )
           : StreamBuilder<List<AppointmentV2>>(
               stream: _stream,
@@ -89,7 +89,7 @@ class _SessionNotesScreenState extends State<SessionNotesScreen> {
                       child: Text(
                         'Could not load sessions.\n${AppointmentService.describeError(snap.error!)}',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white70),
+                        style: TextStyle(color: AppColors.ink70),
                       ),
                     ),
                   );
@@ -203,11 +203,11 @@ class _SessionNotesCardState extends State<_SessionNotesCard> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: widget.initiallyExpanded,
-          iconColor: Colors.white70,
-          collapsedIconColor: Colors.white70,
+          iconColor: AppColors.ink70,
+          collapsedIconColor: AppColors.ink70,
           title: Text(
             when == null ? 'Session' : formatAppointmentTime(when),
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600),
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -216,7 +216,7 @@ class _SessionNotesCardState extends State<_SessionNotesCard> {
                 AppointmentStatusChip(status: a.status),
                 const SizedBox(width: 8),
                 Text('${a.durationMinutes} min',
-                    style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                    style: TextStyle(color: AppColors.ink60, fontSize: 12)),
               ],
             ),
           ),
@@ -228,10 +228,10 @@ class _SessionNotesCardState extends State<_SessionNotesCard> {
               minLines: 2,
               maxLines: 6,
               maxLength: 5000,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
+              style: TextStyle(color: AppColors.ink),
+              decoration: InputDecoration(
                 hintText: 'Add a private note (only you can see it)',
-                hintStyle: TextStyle(color: Colors.white38),
+                hintStyle: TextStyle(color: AppColors.ink38),
               ),
             ),
             Align(
@@ -252,7 +252,7 @@ class _SessionNotesCardState extends State<_SessionNotesCard> {
                 if (snap.hasError) {
                   return Text(
                     'Could not load notes. ${AppointmentService.describeError(snap.error!)}',
-                    style: const TextStyle(color: AppTheme.riskRed),
+                    style: TextStyle(color: AppTheme.riskRed),
                   );
                 }
                 if (!snap.hasData) {
@@ -260,10 +260,10 @@ class _SessionNotesCardState extends State<_SessionNotesCard> {
                 }
                 final docs = snap.data!.docs;
                 if (docs.isEmpty) {
-                  return const Align(
+                  return Align(
                     alignment: Alignment.centerLeft,
                     child: Text('No notes for this session yet.',
-                        style: TextStyle(color: Colors.white54)),
+                        style: TextStyle(color: AppColors.ink54)),
                   );
                 }
                 return Column(
@@ -276,7 +276,7 @@ class _SessionNotesCardState extends State<_SessionNotesCard> {
                       margin: const EdgeInsets.only(top: 8),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
+                        color: AppColors.ink.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Column(
@@ -284,12 +284,12 @@ class _SessionNotesCardState extends State<_SessionNotesCard> {
                         children: [
                           Text(
                             created == null ? 'Saving…' : formatAppointmentTime(created),
-                            style: const TextStyle(color: Colors.white54, fontSize: 11),
+                            style: TextStyle(color: AppColors.ink54, fontSize: 11),
                           ),
                           const SizedBox(height: 4),
                           SelectableText(
                             (data['text'] ?? '').toString(),
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(color: AppColors.ink),
                           ),
                         ],
                       ),

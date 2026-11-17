@@ -24,8 +24,9 @@ enum CrisisReportStatus {
 }
 
 /// Writes PATIENT-INITIATED crisis events (`sos`, `checkin_crisis`,
-/// `chat_crisis`, and `phq9_severe` for PHQ-9 item 9 > 0 with a
-/// deterministic id shared with the Cloud Function) in the exact `crisis_events` contract shape
+/// `chat_crisis`, `phq9_severe` for PHQ-9 item 9 > 0, and `cssrs_high` for a
+/// C-SSRS screener HIGH result — the last two with the deterministic id
+/// `assessment_<assessmentId>` shared with the Cloud Function) in the exact `crisis_events` contract shape
 /// (docs/DATA_MODEL.md). Automatic, score-based crisis events (risk >= 75,
 /// PHQ-9 >= 20, item 9 > 0, vitals) are created ONLY by Cloud Functions to
 /// avoid duplicates.
@@ -35,7 +36,13 @@ enum CrisisReportStatus {
 class PatientCrisisReporter {
   PatientCrisisReporter._();
 
-  static const Set<String> _patientEventTypes = {'sos', 'checkin_crisis', 'chat_crisis', 'phq9_severe'};
+  static const Set<String> _patientEventTypes = {
+    'sos',
+    'checkin_crisis',
+    'chat_crisis',
+    'phq9_severe',
+    'cssrs_high',
+  };
 
   static Future<CrisisReportStatus> report({
     required String eventType,
@@ -45,6 +52,7 @@ class PatientCrisisReporter {
     String? source,
     Map<String, dynamic>? details,
     String? docId,
+    Duration timeout = const Duration(seconds: 6),
   }) async {
     assert(_patientEventTypes.contains(eventType), 'Patients may only create $_patientEventTypes');
     assert(const {'critical', 'high', 'medium'}.contains(severity));
@@ -80,7 +88,7 @@ class PatientCrisisReporter {
     // local queue the moment set() is called.
     final write = ref.set(data);
     try {
-      await write.timeout(const Duration(seconds: 6));
+      await write.timeout(timeout);
       return therapistId == null ? CrisisReportStatus.noTherapist : CrisisReportStatus.delivered;
     } on TimeoutException {
       write.catchError((Object e) => debugPrint('[Crisis] queued write failed later: $e'));
@@ -98,12 +106,12 @@ class PatientCrisisReporter {
         return 'Your therapist has been alerted.';
       case CrisisReportStatus.queued:
         return 'You appear to be offline. Your alert will be sent to your therapist as soon as you reconnect. '
-            'If you are in danger, call your local emergency number now.';
+            'If you are in danger, call 112, or Tele-MANAS 14416 (free, 24x7), now.';
       case CrisisReportStatus.noTherapist:
         return 'You are not linked to a therapist, so no clinician was alerted. '
-            'If you are in danger, call your local emergency number now.';
+            'If you are in danger, call 112, or Tele-MANAS 14416 (free, 24x7), now.';
       case CrisisReportStatus.failed:
-        return 'We could not alert your therapist. If you are in danger, call your local emergency number now.';
+        return 'We could not alert your therapist. If you are in danger, call 112, or Tele-MANAS 14416 (free, 24x7), now.';
     }
   }
 }

@@ -71,17 +71,17 @@ class MedicalSlider extends StatelessWidget {
                 ],
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: AppColors.ink,
                   ),
                 ),
               ],
             ),
             Text(
               '${value.toStringAsFixed(1)}${unit ?? ''}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: AppTheme.primaryIndigo,
@@ -168,13 +168,13 @@ class _SOSButtonState extends State<SOSButton>
                 padding: const EdgeInsets.all(30),
                 elevation: 10,
               ),
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     Icons.emergency,
                     size: 40,
-                    color: Colors.white,
+                    color: AppColors.ink,
                   ),
                   SizedBox(height: 8),
                   Text(
@@ -182,7 +182,7 @@ class _SOSButtonState extends State<SOSButton>
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: AppColors.ink,
                     ),
                   ),
                 ],

@@ -18,6 +18,8 @@ const chatRoutes = require('./src/routes/chat');
 const TokenBucketMiddleware = require('./src/middleware/TokenBucketMiddleware');
 const { verifyAiProviders } = require('./src/config/aiModels');
 const { startLanDiscovery, lanAddresses } = require('./src/services/LanDiscoveryService');
+const { setupFunctionsRunner } = require('./src/firebase/functionsRunner');
+const { createSessionBriefRouter } = require('./src/routes/sessionBrief');
 
 let mlRoutes = null;
 let geminiRoutes = null;
@@ -108,6 +110,12 @@ app.use('/api/chat', chatRoutes);
 if (mlRoutes) app.use('/api/ml', mlRoutes);
 if (geminiRoutes) app.use('/api/gemini', geminiRoutes);
 app.use('/api/realtime', realtimeRoutes);
+// Pre-session brief for the assigned therapist (Firebase ID token; see routes/sessionBrief.js).
+app.use('/api/brief', createSessionBriefRouter());
+
+// Free-plan replacement for Cloud Functions: /api/callable/:name + Firestore
+// listener triggers (see src/firebase/functionsRunner.js, docs/FREE_DEPLOYMENT.md).
+const functionsRunner = setupFunctionsRunner(app);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -117,7 +125,9 @@ app.get('/health', (req, res) => {
     // service that happens to answer /health on the same port.
     service: 'mindtwin-backend',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV,
+    // Listener-based triggers: {enabled, listeners, lastEventAt, ...}
+    runner: functionsRunner.status()
   });
 });
 
@@ -177,6 +187,21 @@ const startServer = (port = BASE_PORT, attempt = 1) => {
 
 startServer();
 startLanDiscovery(() => activeHttpPort);
+
+// Flush the trigger runner's watermarks on Ctrl+C / pm2 stop / Render deploy.
+let shuttingDown = false;
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[Backend] ${signal} received; stopping trigger runner...`);
+    const force = setTimeout(() => process.exit(0), 5000);
+    if (force.unref) force.unref();
+    functionsRunner.stop()
+      .catch((error) => console.error('[Backend] runner stop failed:', error.message))
+      .finally(() => process.exit(0));
+  });
+}
 
 // Surface dead API keys / retired models in the logs at boot instead of
 // letting AI chat silently degrade to the offline fallback reply.

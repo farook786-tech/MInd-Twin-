@@ -72,6 +72,7 @@ Future<void> main() async {
     debugPrint('TokenService init failed: $e');
   }
   await AuthService().init();
+  await ThemeController.instance.load();
 
   if (!kIsWeb) {
     try {
@@ -132,17 +133,23 @@ class _MindTwinAppState extends State<MindTwinApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: AppConfig.isTherapistOnlyMode ? 'MindTwin Therapist' : 'MindTwin',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkMedicalTheme,
-      navigatorKey: appNavigatorKey,
-      // Every named entry point goes through the claim-based gate; there are
-      // deliberately no direct '/patient' or '/therapist' routes.
-      routes: <String, WidgetBuilder>{
-        '/auth': (_) => const AppEntryScreen(),
-      },
-      home: const AppEntryScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.instance,
+      builder: (context, mode, _) => MaterialApp(
+        title: AppConfig.isTherapistOnlyMode ? 'MindTwin Therapist' : 'MindTwin',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: mode,
+        navigatorKey: appNavigatorKey,
+        builder: (context, child) => ThemePaletteScope(child: child ?? const SizedBox.shrink()),
+        // Every named entry point goes through the claim-based gate; there are
+        // deliberately no direct '/patient' or '/therapist' routes.
+        routes: <String, WidgetBuilder>{
+          '/auth': (_) => const AppEntryScreen(),
+        },
+        home: const AppEntryScreen(),
+      ),
     );
   }
 }
@@ -155,7 +162,9 @@ class _FatalStartupApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkMedicalTheme,
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      builder: (context, child) => ThemePaletteScope(child: child ?? const SizedBox.shrink()),
       home: Scaffold(
         body: Center(
           child: Padding(

@@ -181,6 +181,54 @@ function isNewerReading(existingMeasuredAtMillis, newMillis) {
   return newMillis > existingMeasuredAtMillis;
 }
 
+/**
+ * Shape of a `vitals` doc (docs/DATA_MODEL.md "Free-tier budget"):
+ *  - 'window': 5-minute heart-rate aggregate {min, max, sampleCount, windowStart}.
+ *  - 'immediate': out-of-range heart-rate sample written at once by the phone.
+ *  - 'single': legacy one-doc-per-sample heart rate (old app versions), sleep, steps.
+ * @param {object} data
+ * @return {'window'|'immediate'|'single'}
+ */
+function vitalDocKind(data) {
+  if (data && typeof data === 'object') {
+    if (data.windowStart !== undefined && data.windowStart !== null) return 'window';
+    if (data.immediate === true) return 'immediate';
+  }
+  return 'single';
+}
+
+/**
+ * Threshold alerting policy for aggregates: windows are NOT evaluated.
+ * Every out-of-range sample (vs the thresholds cached on the phone, refreshed
+ * hourly) is also written as an `immediate` doc, which IS evaluated — so a
+ * window whose max > high or min < low has already produced (or been
+ * cooled-down against) an alert. Evaluating windows too would duplicate
+ * alerts and cost a transaction (3 reads + 1 write) per window.
+ *
+ * Callers (core/triggers.js vitalCreated) should return early, before any
+ * Firestore read, when this is true. The phone keeps users.latestVitals current
+ * for windows itself (throttled to 15 min).
+ * @param {object} data
+ * @return {boolean}
+ */
+function skipVitalTrigger(data) {
+  return vitalDocKind(data) === 'window';
+}
+
+/**
+ * For reporting only (never alerts): does an aggregate window breach the
+ * thresholds via its min / max? Returns 'high' | 'low' | null.
+ * @param {object} data window doc
+ * @param {{heartRateHigh:number, heartRateLow:number}} t
+ * @return {'high'|'low'|null}
+ */
+function windowBreach(data, t) {
+  if (vitalDocKind(data) !== 'window' || data.type !== 'heart_rate') return null;
+  if (isFiniteNumber(data.max) && data.max > t.heartRateHigh) return 'high';
+  if (isFiniteNumber(data.min) && data.min < t.heartRateLow) return 'low';
+  return null;
+}
+
 function crisisIdForVital(vitalDocId) {
   return `vital_${vitalDocId}`;
 }
@@ -211,4 +259,7 @@ module.exports = {
   isNewerReading,
   crisisIdForVital,
   describeVitalAlert,
+  vitalDocKind,
+  skipVitalTrigger,
+  windowBreach,
 };

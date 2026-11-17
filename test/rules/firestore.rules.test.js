@@ -253,7 +253,108 @@ describe('vitals', () => {
       where('patientId', '==', 'p1'), orderBy('measuredAt', 'desc'))));
     await assertFails(getDocs(query(collection(otherTherapist(), 'vitals'), where('patientId', '==', 'p1'))));
   });
+  it('5-minute heart-rate window: deterministic id, aligned start, end = start + 5 min', async () => {
+    const start = Math.floor((Date.now() - 20 * 60 * 1000) / 300000) * 300000;
+    const win = (over = {}) => vital({
+      value: 72, min: 64.5, max: 80, sampleCount: 5,
+      windowStart: Timestamp.fromMillis(start), measuredAt: Timestamp.fromMillis(start + 300000), ...over,
+    });
+    await assertSucceeds(setDoc(doc(patient(), `vitals/p1_heart_rate_${start}`), win()));
+    // id must match the window start; start must be aligned; end must be start + 5 min
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${start + 1}`), win()));
+    const odd = start - 60000;
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${odd}`),
+      win({ windowStart: Timestamp.fromMillis(odd), measuredAt: Timestamp.fromMillis(odd + 300000) })));
+    const s2 = start - 300000;
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${s2}`),
+      win({ windowStart: Timestamp.fromMillis(s2), measuredAt: Timestamp.fromMillis(s2 + 240000) })));
+    // value inside [min, max]; sane bounds; all window keys; heart rate only
+    const s3 = start - 600000;
+    const at3 = { windowStart: Timestamp.fromMillis(s3), measuredAt: Timestamp.fromMillis(s3 + 300000) };
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${s3}`), win({ ...at3, value: 95 })));
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${s3}`), win({ ...at3, min: 10 })));
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${s3}`), win({ ...at3, sampleCount: 0 })));
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${s3}`), win({ ...at3, sampleCount: 2.5 })));
+    const noCount = win(at3);
+    delete noCount.sampleCount;
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${s3}`), noCount));
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${s3}`), win({ ...at3, immediate: true })));
+    await assertFails(setDoc(doc(patient(), `vitals/p1_sleep_${s3}`),
+      win({ ...at3, type: 'sleep', unit: 'hours', value: 7, min: 7, max: 7 })));
+    await assertSucceeds(setDoc(doc(patient(), `vitals/p1_heart_rate_${s3}`), win(at3)));
+    // immutable once written
+    await assertFails(setDoc(doc(patient(), `vitals/p1_heart_rate_${s3}`), win({ ...at3, value: 70 })));
+  });
+  it('immediate out-of-range sample: heart rate only, no window keys', async () => {
+    const ms = Date.now() - 1000;
+    const imm = (over = {}) => vital({ value: 131.5, measuredAt: Timestamp.fromMillis(ms), immediate: true, ...over });
+    await assertSucceeds(setDoc(doc(patient(), `vitals/p1_heart_rate_imm_${ms}`), imm()));
+    await assertFails(setDoc(doc(patient(), 'vitals/i2'), imm({ immediate: false })));
+    await assertFails(setDoc(doc(patient(), 'vitals/i3'), imm({ type: 'sleep', unit: 'hours', value: 2 })));
+    await assertFails(setDoc(doc(patient(), 'vitals/i4'), imm({ min: 120 })));
+    await assertFails(setDoc(doc(patient(), 'vitals/i5'), vital({ max: 120 }))); // stray window key
+  });
 });
+
+// -------------------------------------------------------------- vitals_daily
+describe('vitals_daily', () => {
+  const daily = (over = {}) => ({
+    patientId: 'p1', therapistId: 't1', date: '2026-11-17', hrRestingEstimate: 61, hrAvg: 74,
+    hrMin: 52, hrMax: 131, hrWindows: 240, sleepHours: 7.2, steps: 8123, updatedAt: serverTimestamp(), ...over,
+  });
+  it('patient creates and merges own day with exact fields', async () => {
+    await assertSucceeds(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'),
+      { patientId: 'p1', therapistId: 't1', date: '2026-11-17', steps: 1200, updatedAt: serverTimestamp() }));
+    await assertSucceeds(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'),
+      { patientId: 'p1', therapistId: 't1', date: '2026-11-17', hrRestingEstimate: null, hrAvg: 70,
+        hrMin: 55, hrMax: 99, hrWindows: 8, updatedAt: serverTimestamp() }, { merge: true }));
+    await assertSucceeds(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'),
+      { patientId: 'p1', therapistId: 't1', date: '2026-11-17', sleepHours: 6.5, updatedAt: serverTimestamp() },
+      { merge: true }));
+    const snap = await getDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'));
+    if (snap.data().steps !== 1200 || snap.data().hrAvg !== 70) throw new Error('merge lost fields');
+  });
+  it('rejects wrong id/date/owner/stamp, extra fields, out-of-range values, client time', async () => {
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-16'), daily()));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_17-11-2026'), daily({ date: '17-11-2026' })));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p2_2026-11-17'), daily({ patientId: 'p2' })));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'), daily({ therapistId: 't2' })));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'), daily({ mood: 3 })));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'), daily({ hrAvg: 400 })));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'), daily({ sleepHours: 25 })));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'), daily({ steps: -1 })));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'), daily({ steps: '100' })));
+    await assertFails(setDoc(doc(patient(), 'vitals_daily/p1_2026-11-17'), daily({ updatedAt: PAST })));
+    await assertFails(setDoc(doc(therapist(), 'vitals_daily/p1_2026-11-17'), daily()));
+    await assertFails(setDoc(doc(pendingTherapist(), 'vitals_daily/p1_2026-11-17'), daily()));
+  });
+  it('no deletes, identity fields immutable, therapist cannot write', async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      setDoc(doc(ctx.firestore(), 'vitals_daily/p1_2026-11-16'), { ...daily({ date: '2026-11-16' }), updatedAt: PAST }));
+    await assertFails(deleteDoc(doc(patient(), 'vitals_daily/p1_2026-11-16')));
+    await assertFails(updateDoc(doc(patient(), 'vitals_daily/p1_2026-11-16'),
+      { date: '2026-11-15', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(therapist(), 'vitals_daily/p1_2026-11-16'),
+      { steps: 1, updatedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(doc(patient(), 'vitals_daily/p1_2026-11-16'),
+      { steps: 9000, therapistId: 't1', updatedAt: serverTimestamp() }));
+  });
+  it('reads: owner + own therapist only; 28-day query by patientId + date desc', async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      setDoc(doc(ctx.firestore(), 'vitals_daily/p1_2026-11-16'), { ...daily({ date: '2026-11-16' }), updatedAt: PAST }));
+    await assertSucceeds(getDoc(doc(patient(), 'vitals_daily/p1_2026-11-16')));
+    await assertSucceeds(getDoc(doc(therapist(), 'vitals_daily/p1_2026-11-16')));
+    await assertFails(getDoc(doc(otherTherapist(), 'vitals_daily/p1_2026-11-16')));
+    await assertFails(getDoc(doc(otherPatient(), 'vitals_daily/p1_2026-11-16')));
+    await assertSucceeds(getDocs(query(collection(therapist(), 'vitals_daily'),
+      where('patientId', '==', 'p1'), orderBy('date', 'desc'))));
+    await assertSucceeds(getDocs(query(collection(patient(), 'vitals_daily'),
+      where('patientId', '==', 'p1'), orderBy('date', 'desc'))));
+    await assertFails(getDocs(query(collection(otherTherapist(), 'vitals_daily'),
+      where('patientId', '==', 'p1'))));
+  });
+});
+
 
 // ------------------------------------------------- daily_logs / assessments
 describe('daily_logs and clinical_assessments', () => {
@@ -708,6 +809,118 @@ describe('immediate PHQ-9 crisis (assessment_<id>) and daily-log ML fields', () 
   });
 });
 
+describe('C-SSRS screener (clinical_assessments type cssrs) and cssrs_high crisis', () => {
+  const ans = (over = {}) => ({
+    q1: false, q2: false, q3: null, q4: null, q5: null, q6: false, q6Recent: null, ...over,
+  });
+  const cs = (answers, cssrsRisk, over = {}) => ({
+    patientId: 'p1', therapistId: 't1', type: 'cssrs', cssrsAnswers: answers, cssrsRisk,
+    timestamp: serverTimestamp(), clientCreatedAt: Timestamp.now(), ...over,
+  });
+  const col = () => collection(patient(), 'clinical_assessments');
+
+  it('accepts every triage outcome when risk matches the answers', async () => {
+    await assertSucceeds(addDoc(col(), cs(ans(), 'none')));
+    await assertSucceeds(addDoc(col(), cs(ans({ q1: true }), 'low')));
+    await assertSucceeds(addDoc(col(), cs(ans({ q1: true, q2: true, q3: false, q4: false, q5: false }), 'low')));
+    await assertSucceeds(addDoc(col(), cs(ans({ q2: true, q3: true, q4: false, q5: false }), 'moderate')));
+    await assertSucceeds(addDoc(col(), cs(ans({ q6: true, q6Recent: false }), 'moderate')));
+    await assertSucceeds(addDoc(col(), cs(ans({ q2: true, q3: false, q4: true, q5: false }), 'high')));
+    await assertSucceeds(addDoc(col(), cs(ans({ q2: true, q3: true, q4: false, q5: true }), 'high')));
+    await assertSucceeds(addDoc(col(), cs(ans({ q6: true, q6Recent: true }), 'high')));
+  });
+  it('rejects a risk that does not match the answers (no under-reporting)', async () => {
+    await assertFails(addDoc(col(), cs(ans({ q2: true, q3: false, q4: true, q5: false }), 'low')));
+    await assertFails(addDoc(col(), cs(ans({ q6: true, q6Recent: true }), 'moderate')));
+    await assertFails(addDoc(col(), cs(ans({ q1: true }), 'none')));
+    await assertFails(addDoc(col(), cs(ans(), 'severe')));
+  });
+  it('enforces protocol skip logic and types', async () => {
+    await assertFails(addDoc(col(), cs(ans({ q2: false, q3: true }), 'moderate')));
+    await assertFails(addDoc(col(), cs(ans({ q2: true }), 'low')));
+    await assertFails(addDoc(col(), cs(ans({ q6: true }), 'high')));
+    await assertFails(addDoc(col(), cs(ans({ q6Recent: true }), 'none')));
+    await assertFails(addDoc(col(), cs(ans({ q1: 'yes' }), 'low')));
+    await assertFails(addDoc(col(), cs({ q1: false, q2: false, q6: false }, 'none')));
+    await assertFails(addDoc(col(), cs({ ...ans(), extra: true }, 'none')));
+  });
+  it('exact field set; server timestamp; own stamp', async () => {
+    await assertFails(addDoc(col(), cs(ans(), 'none', { totalScore: 5 })));
+    await assertFails(addDoc(col(), cs(ans(), 'none', { item9: 0 })));
+    await assertFails(addDoc(col(), cs(ans(), 'none', { timestamp: Timestamp.now() })));
+    await assertFails(addDoc(col(), cs(ans(), 'none', { clientCreatedAt: 'now' })));
+    const noClient = cs(ans(), 'none');
+    delete noClient.clientCreatedAt;
+    await assertFails(addDoc(col(), noClient));
+    await assertFails(addDoc(col(), cs(ans(), 'none', { therapistId: 't2' })));
+    await assertFails(addDoc(collection(otherPatient(), 'clinical_assessments'), cs(ans(), 'none')));
+    await assertFails(addDoc(collection(therapist(), 'clinical_assessments'), cs(ans(), 'none', { patientId: 't1' })));
+  });
+  it('a PHQ-shaped doc cannot claim type cssrs, and cssrs fields are not allowed on PHQ docs', async () => {
+    await assertFails(addDoc(col(), {
+      patientId: 'p1', therapistId: 't1', type: 'cssrs', totalScore: 3, timestamp: serverTimestamp(),
+    }));
+    await assertFails(addDoc(col(), {
+      patientId: 'p1', therapistId: 't1', type: 'phq9_gad7', totalScore: 3, cssrsRisk: 'none',
+      timestamp: serverTimestamp(),
+    }));
+  });
+  it('unlinked patient stores therapistId null', async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      setDoc(doc(ctx.firestore(), 'users/p3'), { role: 'patient', therapistId: null, name: 'U' }));
+    const db = env.authenticatedContext('p3', { role: 'patient' }).firestore();
+    await assertSucceeds(addDoc(collection(db, 'clinical_assessments'),
+      cs(ans(), 'none', { patientId: 'p3', therapistId: null })));
+  });
+  it('therapist reads the patient C-SSRS; other therapist cannot; immutable', async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'clinical_assessments/cs1'), {
+      patientId: 'p1', therapistId: 't1', type: 'cssrs', cssrsAnswers: ans(), cssrsRisk: 'none',
+      timestamp: PAST, clientCreatedAt: PAST,
+    }));
+    await assertSucceeds(getDoc(doc(therapist(), 'clinical_assessments/cs1')));
+    await assertFails(getDoc(doc(otherTherapist(), 'clinical_assessments/cs1')));
+    await assertFails(updateDoc(doc(patient(), 'clinical_assessments/cs1'), { cssrsRisk: 'none' }));
+    await assertSucceeds(getDocs(query(collection(therapist(), 'clinical_assessments'),
+      where('patientId', '==', 'p1'), orderBy('timestamp', 'desc'))));
+  });
+
+  const hi = (over = {}) => ({
+    patientId: 'p1', therapistId: 't1', patientName: 'Pat', eventType: 'cssrs_high', severity: 'critical',
+    title: 'C-SSRS high risk', message: 'Q4 yes', acknowledged: false, timestamp: serverTimestamp(),
+    clientCreatedAt: Timestamp.now(), source: 'cssrs_screener',
+    details: { assessmentId: 'A1', cssrsRisk: 'high', positiveItems: ['q2', 'q4'] },
+    ...over,
+  });
+  it('patient may create cssrs_high only at assessment_<id> and only as critical', async () => {
+    await assertSucceeds(setDoc(doc(patient(), 'crisis_events/assessment_A1'), hi()));
+    await assertFails(setDoc(doc(patient(), 'crisis_events/assessment_A2'), hi({ severity: 'high' })));
+    await assertFails(setDoc(doc(patient(), 'crisis_events/assessment_A3'), hi({ severity: 'medium' })));
+    await assertFails(setDoc(doc(patient(), 'crisis_events/random1'), hi()));
+    await assertFails(addDoc(collection(patient(), 'crisis_events'), hi()));
+    await assertFails(setDoc(doc(patient(), 'crisis_events/assessment_A4'), hi({ eventType: 'cssrs_moderate' })));
+    await assertFails(setDoc(doc(otherPatient(), 'crisis_events/assessment_A5'), hi()));
+    await assertFails(setDoc(doc(patient(), 'crisis_events/assessment_A6'), hi({ acknowledged: true })));
+  });
+  it('therapist acknowledges the cssrs_high alert; patient cannot', async () => {
+    await assertSucceeds(setDoc(doc(patient(), 'crisis_events/assessment_A7'), hi()));
+    await assertFails(updateDoc(doc(patient(), 'crisis_events/assessment_A7'),
+      { acknowledged: true, acknowledgedAt: serverTimestamp(), acknowledgedBy: 'p1' }));
+    await assertSucceeds(updateDoc(doc(therapist(), 'crisis_events/assessment_A7'),
+      { acknowledged: true, acknowledgedAt: serverTimestamp(), acknowledgedBy: 't1' }));
+    await assertSucceeds(getDocs(query(collection(therapist(), 'crisis_events'),
+      where('patientId', '==', 'p1'), where('acknowledged', '==', false))));
+  });
+  it('users.latestCssrs snapshot validated', async () => {
+    await assertSucceeds(updateDoc(doc(patient(), 'users/p1'), { latestCssrs: { risk: 'high', at: serverTimestamp() } }));
+    await assertSucceeds(updateDoc(doc(patient(), 'users/p1'),
+      { latestGad7: { total: 12, severity: 'moderate', at: serverTimestamp() } }));
+    await assertFails(updateDoc(doc(patient(), 'users/p1'), { latestCssrs: { risk: 'severe', at: serverTimestamp() } }));
+    await assertFails(updateDoc(doc(patient(), 'users/p1'), { latestCssrs: { risk: 'low' } }));
+    await assertFails(updateDoc(doc(patient(), 'users/p1'), { latestCssrs: { risk: 'low', at: PAST, x: 1 } }));
+    await assertFails(updateDoc(doc(therapist(), 'users/p1'), { latestCssrs: { risk: 'none', at: serverTimestamp() } }));
+  });
+});
+
 describe('default deny', () => {
   it('unknown and server-only collections are closed', async () => {
     await assertFails(getDocs(query(collection(therapist(), 'anomalies'), where('therapistId', '==', 't1'))));
@@ -716,5 +929,59 @@ describe('default deny', () => {
     await assertFails(addDoc(collection(therapist(), 'messages'), { a: 1 }));
     await assertFails(getDoc(doc(therapist(), 'alert_cooldowns/p1')));
     await assertFails(getDoc(doc(therapist(), 'push_receipts/x')));
+  });
+});
+
+describe('safety_plans', () => {
+  const plan = (over = {}) => ({
+    patientId: 'p1', therapistId: 't1',
+    warningSigns: ['Not sleeping'], copingStrategies: ['Walk'], distractionsPeople: [],
+    helpContacts: [{ name: 'Sis', phone: '+919999999999' }], professionals: [],
+    environmentSafety: 'Keep meds with family', reasonsToLive: ['My dog'],
+    updatedAt: serverTimestamp(), updatedBy: 'p1', ...over,
+  });
+  it('patient creates and updates own plan with the correct therapist stamp', async () => {
+    await assertSucceeds(setDoc(doc(patient(), 'safety_plans/p1'), plan()));
+    await assertSucceeds(setDoc(doc(patient(), 'safety_plans/p1'), plan({ reasonsToLive: ['Family'] })));
+    await assertSucceeds(getDoc(doc(patient(), 'safety_plans/p1')));
+  });
+  it('patient writes with wrong stamp, extra key, >20 items, client updatedAt or for another patient are denied', async () => {
+    await assertFails(setDoc(doc(patient(), 'safety_plans/p1'), plan({ therapistId: 't2' })));
+    await assertFails(setDoc(doc(patient(), 'safety_plans/p1'), plan({ extra: 1 })));
+    await assertFails(setDoc(doc(patient(), 'safety_plans/p1'),
+      plan({ warningSigns: Array.from({ length: 21 }, (_, i) => `s${i}`) })));
+    await assertFails(setDoc(doc(patient(), 'safety_plans/p1'), plan({ updatedAt: PAST })));
+    await assertFails(setDoc(doc(patient(), 'safety_plans/p2'), plan({ patientId: 'p2' })));
+  });
+  it('linked therapist reads, drafts and edits content; cannot retarget the plan', async () => {
+    await assertSucceeds(setDoc(doc(therapist(), 'safety_plans/p1'), plan({ updatedBy: 't1' })));
+    await assertSucceeds(getDoc(doc(therapist(), 'safety_plans/p1')));
+    await assertSucceeds(updateDoc(doc(therapist(), 'safety_plans/p1'),
+      { copingStrategies: ['Breathing'], updatedAt: serverTimestamp(), updatedBy: 't1' }));
+    await assertFails(updateDoc(doc(therapist(), 'safety_plans/p1'),
+      { patientId: 'p2', updatedAt: serverTimestamp(), updatedBy: 't1' }));
+    await assertFails(updateDoc(doc(therapist(), 'safety_plans/p1'),
+      { therapistId: 't2', updatedAt: serverTimestamp(), updatedBy: 't1' }));
+  });
+  it('unlinked therapist cannot read or write; nobody deletes', async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'safety_plans/p1'),
+      { ...plan(), updatedAt: PAST }));
+    await assertFails(getDoc(doc(otherTherapist(), 'safety_plans/p1')));
+    await assertFails(setDoc(doc(otherTherapist(), 'safety_plans/p1'), plan({ therapistId: 't2', updatedBy: 't2' })));
+    await assertFails(deleteDoc(doc(patient(), 'safety_plans/p1')));
+    await assertFails(deleteDoc(doc(therapist(), 'safety_plans/p1')));
+  });
+});
+
+describe('watch SOS crisis event', () => {
+  const sos = () => ({
+    patientId: 'p1', therapistId: 't1', patientName: 'Pat', eventType: 'sos', severity: 'critical',
+    title: 'SOS from watch', message: 'Help requested from the smartwatch', acknowledged: false,
+    timestamp: serverTimestamp(), source: 'wear_os',
+  });
+  it('patient creates a wear_os SOS once; re-creating the same id is denied', async () => {
+    const id = `crisis_events/wear_sos_p1_${Date.now()}`;
+    await assertSucceeds(setDoc(doc(patient(), id), sos()));
+    await assertFails(setDoc(doc(patient(), id), sos()));
   });
 });

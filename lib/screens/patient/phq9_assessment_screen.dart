@@ -9,6 +9,7 @@ import '../../core/widgets/app_card.dart';
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
 import '../../services/patient_crisis_reporter.dart';
+import 'cssrs_screener_screen.dart';
 import 'my_twin_screen.dart';
 import 'safety_resources_screen.dart';
 
@@ -251,12 +252,17 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
         unawaited(write.catchError((Object e) => debugPrint('Queued assessment failed: $e')));
       }
 
-      // Patient snapshot: latest PHQ-9 only. latestRiskScore is owned by the
-      // daily check-in and is NOT overwritten here.
+      // Patient snapshot: latest PHQ-9 / GAD-7 only. latestRiskScore is owned
+      // by the daily check-in and is NOT overwritten here.
       unawaited(_firestore.collection('users').doc(patientId).set({
         'latestPhq9': {
           'total': phq9Score,
           'severity': _phqSeverity(phq9Score),
+          'at': FieldValue.serverTimestamp(),
+        },
+        'latestGad7': {
+          'total': gad7Score,
+          'severity': _gadSeverity(gad7Score),
           'at': FieldValue.serverTimestamp(),
         },
       }, SetOptions(merge: true)).catchError((Object e) => debugPrint('PHQ-9 snapshot update failed: $e')));
@@ -298,6 +304,14 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
       ));
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
+      );
+      // PHQ-9 item 9 is a screening item, not a risk assessment: offer the
+      // C-SSRS screener straight after the item-9 safety alert so the
+      // therapist gets the specific, Columbia-triaged follow-up. It opens on an
+      // intro page where the patient may choose "Not now".
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const CssrsScreenerScreen(source: 'phq9_item9')),
       );
     } else if (_isComplete && phq9Score >= 20) {
       await _showSafetyFollowUp(linked: therapistId != null, offline: queuedOffline);
@@ -424,7 +438,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
         Text(
           'Question ${_currentIndex + 1} of ${_questions.length}',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.72),
+            color: AppColors.ink.withValues(alpha: 0.72),
             fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
@@ -436,7 +450,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
             minHeight: 8,
             value: progress,
             color: AppTheme.primaryIndigo.withValues(alpha: 0.9),
-            backgroundColor: Colors.white.withValues(alpha: 0.08),
+            backgroundColor: AppColors.ink.withValues(alpha: 0.08),
           ),
         ),
         const SizedBox(height: 14),
@@ -445,12 +459,12 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
           decoration: BoxDecoration(
             color: AppTheme.cardDark.withValues(alpha: 0.74),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
           ),
           child: Text(
             question.section,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.ink,
               fontSize: 12,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.2,
@@ -470,8 +484,8 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
         const SizedBox(height: 20),
         Text(
           question.prompt,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: AppColors.ink,
             fontSize: 28,
             height: 1.25,
             fontWeight: FontWeight.w700,
@@ -481,7 +495,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
         Text(
           'Take your time with this one 💙',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.62),
+            color: AppColors.ink.withValues(alpha: 0.62),
             fontSize: 15,
             fontWeight: FontWeight.w500,
           ),
@@ -513,7 +527,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
                 border: Border.all(
                   color: selected
                       ? AppTheme.primaryIndigo.withValues(alpha: 0.95)
-                      : Colors.white.withValues(alpha: 0.08),
+                      : AppColors.ink.withValues(alpha: 0.08),
                   width: selected ? 1.5 : 1,
                 ),
                 boxShadow: selected
@@ -535,8 +549,8 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
                       option.label,
                       style: TextStyle(
                         color: selected
-                            ? Colors.white
-                            : Colors.white.withValues(alpha: 0.76),
+                            ? AppColors.ink
+                            : AppColors.ink.withValues(alpha: 0.76),
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                       ),
@@ -563,16 +577,16 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
             end: Alignment.bottomRight,
             colors: [
               AppTheme.primaryIndigo.withValues(alpha: 0.24),
-              Colors.white.withValues(alpha: 0.06),
+              AppColors.ink.withValues(alpha: 0.06),
             ],
           ),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
         ),
-        child: const Text(
+        child: Text(
           'You\'re doing great 💙 Keep going',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Colors.white,
+            color: AppColors.ink,
             fontSize: 22,
             height: 1.3,
             fontWeight: FontWeight.w700,
@@ -596,10 +610,10 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Assessment complete',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontSize: 26,
                   fontWeight: FontWeight.w700,
                 ),
@@ -612,7 +626,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
               Text(
                 'Thank you for being honest today. Your responses help Ally and your care team support you with more precision. 💙',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.75),
+                  color: AppColors.ink.withValues(alpha: 0.75),
                   height: 1.4,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -642,8 +656,8 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        color: Colors.white.withValues(alpha: 0.04),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        color: AppColors.ink.withValues(alpha: 0.04),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -651,7 +665,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
           Text(
             title,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.68),
+              color: AppColors.ink.withValues(alpha: 0.68),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -659,8 +673,8 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
           const SizedBox(height: 6),
           Text(
             score,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.ink,
               fontSize: 22,
               fontWeight: FontWeight.w700,
             ),
@@ -669,7 +683,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
           Text(
             interpretation,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.72),
+              color: AppColors.ink.withValues(alpha: 0.72),
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -694,7 +708,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
       body: _isComplete
           ? _buildFinalScreen()
           : _isSubmitting
-              ? const Center(
+              ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -702,7 +716,7 @@ class _PHQ9AssessmentScreenState extends State<PHQ9AssessmentScreen> {
                       SizedBox(height: 14),
                       Text(
                         'Submitting assessment...',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: AppColors.ink70),
                       ),
                     ],
                   ),

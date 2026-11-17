@@ -1,4 +1,9 @@
+import 'package:mindtwin/widgets/clinical_status_card.dart';
 import 'package:mindtwin/widgets/patient_vitals_panel.dart';
+import 'package:mindtwin/widgets/twin_drift_card.dart';
+import '../../services/digital_twin_service.dart' show DriftResult;
+import 'package:mindtwin/widgets/session_brief_sheet.dart';
+import '../../services/clinical_scoring.dart' show EarlyWarning;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +16,7 @@ import 'session_notes_screen.dart';
 import 'treatment_plan_screen.dart';
 import 'therapist_ai_chat_screen.dart';
 import '../chat/chat_screen.dart';
+import '../patient/safety_plan_screen.dart';
 import '../../services/daily_log_source.dart';
 
 /// Therapist view of ONE patient. Everything here is live Firestore data
@@ -43,6 +49,10 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
 
   MentalHealthAnalysis? _analysis;
   bool _analysisLoading = false;
+
+  /// Latest Digital Twin drift (personal-baseline early warning). Shown in its own card
+  /// and listed under the Clinical status card's early warnings; never changes the level.
+  DriftResult? _drift;
 
   /// Latest patient model built from the live users doc (used for navigation
   /// to tools that take a [Patient]).
@@ -121,6 +131,25 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
             ),
             actions: [
               IconButton(
+                icon: const Icon(Icons.summarize_outlined),
+                tooltip: 'Pre-session brief',
+                onPressed: () => showSessionBriefSheet(context, patientId: widget.patient.id),
+              ),
+              IconButton(
+                icon: const Icon(Icons.assignment_turned_in_outlined),
+                tooltip: 'Safety plan',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SafetyPlanScreen(
+                      patientId: patient.id,
+                      patientName: patient.name,
+                      asTherapist: true,
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
                 icon: const Icon(Icons.smart_toy),
                 tooltip: 'AI Clinical Assistant',
                 onPressed: () {
@@ -191,6 +220,30 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Validated-instrument clinical status (PHQ-9 / GAD-7 / C-SSRS)
+            // with early-warning signals listed separately.
+            ClinicalStatusCard(
+              patientId: widget.patient.id,
+              extraEarlyWarnings: [
+                if (_analysis != null && _analysis!.anomalyDetected)
+                  EarlyWarning(
+                    source: 'Check-in pattern change (statistical)',
+                    detail: _analysis!.anomalyDescription,
+                    flagged: true,
+                  ),
+                if (_drift?.toEarlyWarning() case final drift?) drift,
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Digital Twin drift: recent days vs the patient's own 28-day baseline.
+            TwinDriftCard(
+              patientId: widget.patient.id,
+              therapistView: true,
+              onResult: (r) {
+                if (mounted) setState(() => _drift = r);
+              },
+            ),
+            const SizedBox(height: 16),
             // Live wearable vitals (owned by the vitals engineer).
             PatientVitalsPanel(patientId: widget.patient.id),
             const SizedBox(height: 16),
@@ -255,13 +308,13 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
                 children: [
                   Text(
                     t.isDefault ? 'Vital alert thresholds (defaults)' : 'Vital alert thresholds',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Heart rate: alert below ${fmt(t.hrLow)} or above ${fmt(t.hrHigh)} bpm\n'
                     'Sleep: alert below ${fmt(t.sleepLow)} h',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                    style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7), fontSize: 12),
                   ),
                 ],
               ),
@@ -312,21 +365,24 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     final lastCheckIn = _current.lastCheckInAt;
     final Color riskColor;
     final String riskLabel;
+    // Self-report heuristic from the daily check-in (mood/sleep/energy/worries).
+    // An early-warning signal, NOT a risk prediction or diagnosis; the
+    // clinical level comes from the Clinical status card above.
     if (risk == null) {
-      riskColor = Colors.white54;
+      riskColor = AppColors.ink54;
       riskLabel = 'NO DATA';
     } else if (risk >= 75) {
       riskColor = AppTheme.riskRed;
-      riskLabel = 'CRITICAL';
+      riskLabel = 'VERY HIGH STRAIN';
     } else if (risk >= 50) {
       riskColor = AppTheme.riskRed;
-      riskLabel = 'HIGH RISK';
+      riskLabel = 'HIGH STRAIN';
     } else if (risk >= 25) {
       riskColor = AppTheme.warningAmber;
-      riskLabel = 'MODERATE';
+      riskLabel = 'SOME STRAIN';
     } else {
       riskColor = AppTheme.safeGreen;
-      riskLabel = 'LOW RISK';
+      riskLabel = 'LITTLE STRAIN';
     }
 
     final phq = _userData['latestPhq9'];
@@ -343,9 +399,11 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Current Risk Level',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    'Check-in wellbeing indicator',
+                    style: TextStyle(color: AppColors.ink, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -374,14 +432,14 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
                     child: CircularProgressIndicator(
                       value: risk == null ? 0 : risk / 100,
                       strokeWidth: 12,
-                      backgroundColor: Colors.white.withValues(alpha: 0.1),
+                      backgroundColor: AppColors.ink.withValues(alpha: 0.1),
                       valueColor: AlwaysStoppedAnimation(riskColor),
                     ),
                   ),
                   Text(
-                    risk == null ? '--' : '${risk.round()}',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    risk == null ? '—' : '${risk.round()}',
+                    style: TextStyle(
+                      color: AppColors.ink,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
@@ -391,13 +449,20 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              risk == null ? 'No check-in has produced a risk score yet.' : 'Risk score ${risk.round()}/100',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
+              risk == null
+                  ? 'Check-in wellbeing indicator: — (no check-in yet)'
+                  : 'Check-in wellbeing indicator ${risk.round()}/100 (higher = more strain reported)',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.ink.withValues(alpha: 0.75), fontSize: 13),
+            ),
+            Text(
+              'Self-report heuristic; early-warning only, not diagnostic.',
+              style: TextStyle(color: AppColors.ink.withValues(alpha: 0.5), fontSize: 11),
             ),
             if (wellbeing != null)
               Text(
                 'Wellbeing ${wellbeing.round()}/100',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
+                style: TextStyle(color: AppColors.ink.withValues(alpha: 0.75), fontSize: 13),
               ),
             if (phqTotal is num)
               Text(
@@ -405,14 +470,14 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
                 '${phqSeverity == null ? '' : ' ($phqSeverity)'}'
                 '${phqAt == null ? '' : ' • ${_formatDate(phqAt)}'}',
                 style: TextStyle(
-                  color: phqTotal >= 20 ? AppTheme.riskRed : Colors.white.withValues(alpha: 0.75),
+                  color: phqTotal >= 20 ? AppTheme.riskRed : AppColors.ink.withValues(alpha: 0.75),
                   fontSize: 13,
                 ),
               ),
             const SizedBox(height: 6),
             Text(
               lastCheckIn == null ? 'Last check-in: never' : 'Last check-in: ${_formatDate(lastCheckIn)}',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+              style: TextStyle(color: AppColors.ink.withValues(alpha: 0.6), fontSize: 13),
             ),
           ],
         ),
@@ -430,35 +495,42 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
                 Icon(Icons.psychology, color: AppTheme.primaryIndigo, size: 20),
                 SizedBox(width: 8),
-                Text(
-                  'AI Analysis',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    'Check-in trend (early warning, not diagnostic)',
+                    style: TextStyle(color: AppColors.ink, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            _buildAnalysisRow('Trend', analysis.trendDirection, _getTrendIcon(analysis.trendDirection)),
-            _buildAnalysisRow('Prediction (7d)', '${(analysis.prediction.isNotEmpty ? analysis.prediction[6] * 100 : 0).toInt()}%', Icons.trending_up),
-            if (analysis.anomalyDetected) 
-              _buildAnalysisRow('Anomalies', 'Detected', Icons.warning, color: AppTheme.warningAmber),
-            const SizedBox(height: 12),
-            if (analysis.recommendation.isNotEmpty) ...[  
-              const Text('Recommendation:', style: TextStyle(color: Colors.white70, fontSize: 13)),
-              const SizedBox(height: 8),
+            _buildAnalysisRow('Check-in trend', analysis.trendDirection, _getTrendIcon(analysis.trendDirection)),
+            _buildAnalysisRow(
+              'Check-ins analysed',
+              '${analysis.detailedMetrics['dataPoints'] ?? '—'}',
+              Icons.event_note_rounded,
+            ),
+            if (analysis.anomalyDetected)
+              _buildAnalysisRow('Pattern change', 'Detected', Icons.warning, color: AppTheme.warningAmber),
+            if (analysis.anomalyDetected && analysis.anomalyDescription.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  children: [
-                    const Text('• ', style: TextStyle(color: AppTheme.primaryIndigo)),
-                    Expanded(child: Text(analysis.recommendation, style: const TextStyle(color: Colors.white, fontSize: 13))),
-                  ],
+                padding: const EdgeInsets.only(left: 24, bottom: 8),
+                child: Text(
+                  analysis.anomalyDescription,
+                  style: TextStyle(color: AppColors.ink70, fontSize: 12),
                 ),
               ),
-            ],
+            const SizedBox(height: 8),
+            Text(
+              'Statistical summary of the patient\'s self-reported check-ins (moving averages and '
+              'slope). It is not a prediction of clinical outcome, a diagnosis, or a treatment '
+              'recommendation.',
+              style: TextStyle(color: AppColors.ink.withValues(alpha: 0.5), fontSize: 11),
+            ),
           ],
         ),
       ),
@@ -470,11 +542,11 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: color ?? Colors.white.withValues(alpha: 0.5)),
+          Icon(icon, size: 16, color: color ?? AppColors.ink.withValues(alpha: 0.5)),
           const SizedBox(width: 8),
-          Text('$label:', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          Text('$label:', style: TextStyle(color: AppColors.ink70, fontSize: 13)),
           const SizedBox(width: 8),
-          Text(value, style: TextStyle(color: color ?? Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+          Text(value, style: TextStyle(color: color ?? AppColors.ink, fontSize: 13, fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -490,9 +562,9 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Clinical Tools',
-          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(color: AppColors.ink, fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         GridView.count(
@@ -572,7 +644,7 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                style: TextStyle(color: AppColors.ink, fontSize: 13, fontWeight: FontWeight.w500),
               ),
             ],
           ),
@@ -585,9 +657,9 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Check-in History',
-          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(color: AppColors.ink, fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -629,7 +701,7 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     final moodScore = (log['moodScore'] is num) ? (log['moodScore'] as num).toDouble() : null;
     final mood10 = moodScore == null ? null : ((5 - moodScore.clamp(1.0, 5.0)) / 4) * 10;
     final color = risk == null
-        ? Colors.white54
+        ? AppColors.ink54
         : risk >= 75
             ? AppTheme.riskRed
             : risk >= 50
@@ -643,7 +715,7 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
       if (log['mood'] != null) 'Mood: ${log['mood']}${mood10 == null ? '' : ' (${mood10.toStringAsFixed(1)}/10)'}',
       if (log['sleep'] != null) 'Sleep: ${log['sleep']}',
       if (log['energy'] != null) 'Energy: ${log['energy']}',
-      if (risk != null) 'Risk: ${risk.round()}/100',
+      'Check-in indicator: ${risk == null ? '—' : '${risk.round()}/100'}',
     ];
 
     return Container(
@@ -672,19 +744,19 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
               children: [
                 Text(
                   when == null ? 'Pending sync' : DateFormat('MMM dd, yyyy • HH:mm').format(when.toLocal()),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                  style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   details.isEmpty ? 'No details recorded' : details.join(' • '),
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                  style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7), fontSize: 12),
                 ),
                 if (note.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
                     '"$note"',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: AppColors.ink.withValues(alpha: 0.6),
                       fontSize: 12,
                       fontStyle: FontStyle.italic,
                     ),
@@ -707,9 +779,9 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Journal Entries',
-          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(color: AppColors.ink, fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         if (stream == null)
@@ -760,12 +832,12 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.mic_rounded, color: AppTheme.primaryIndigo, size: 16),
+                Icon(Icons.mic_rounded, color: AppTheme.primaryIndigo, size: 16),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     meta.join(' • '),
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                    style: TextStyle(color: AppColors.ink.withValues(alpha: 0.6), fontSize: 12),
                   ),
                 ),
               ],
@@ -773,7 +845,7 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
             const SizedBox(height: 8),
             Text(
               text.isEmpty ? '(no transcript)' : text,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: TextStyle(color: AppColors.ink, fontSize: 13),
             ),
           ],
         ),
@@ -787,7 +859,7 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Center(
-          child: Text(text, style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+          child: Text(text, style: TextStyle(color: AppColors.ink.withValues(alpha: 0.5))),
         ),
       ),
     );
@@ -798,23 +870,23 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.picture_as_pdf, color: AppTheme.riskRed),
             SizedBox(width: 8),
-            Text('Export Patient Report', style: TextStyle(color: Colors.white)),
+            Text('Export Patient Report', style: TextStyle(color: AppColors.ink)),
           ],
         ),
-        content: const Text(
+        content: Text(
           'Generate a comprehensive PDF report including:\n\n'
           '• Patient demographics\n'
-          '• Risk assessment history\n'
-          '• Treatment plan\n'
+          '• Validated assessment history (PHQ-9, GAD-7, C-SSRS)\n'
+          '• Treatment plan (clinician-authored)\n'
           '• Session notes\n'
-          '• ML analysis\n'
+          '• Early-warning signals (not diagnostic)\n'
           '• Check-in timeline\n\n'
           'This feature requires pdf package integration.',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.ink70),
         ),
         actions: [
           TextButton(
@@ -892,9 +964,9 @@ class _ErrorPanel extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, color: AppTheme.riskRed),
+          Icon(Icons.error_outline_rounded, color: AppTheme.riskRed),
           const SizedBox(width: 10),
-          Expanded(child: Text(message, style: const TextStyle(color: Colors.white))),
+          Expanded(child: Text(message, style: TextStyle(color: AppColors.ink))),
         ],
       ),
     );
@@ -960,11 +1032,11 @@ class _ThresholdsDialogState extends State<_ThresholdsDialog> {
   Widget build(BuildContext context) {
     InputDecoration deco(String label) => InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Colors.white70),
+          labelStyle: TextStyle(color: AppColors.ink70),
         );
     return AlertDialog(
       backgroundColor: AppTheme.cardDark,
-      title: const Text('Vital alert thresholds', style: TextStyle(color: Colors.white)),
+      title: Text('Vital alert thresholds', style: TextStyle(color: AppColors.ink)),
       content: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -974,7 +1046,7 @@ class _ThresholdsDialogState extends State<_ThresholdsDialog> {
               TextFormField(
                 controller: _hrHigh,
                 keyboardType: const TextInputType.numberWithOptions(decimal: false),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: AppColors.ink),
                 decoration: deco('Heart rate HIGH (bpm)'),
                 validator: (v) {
                   final err = _range(v, 80, 220, 'bpm');
@@ -989,21 +1061,21 @@ class _ThresholdsDialogState extends State<_ThresholdsDialog> {
               TextFormField(
                 controller: _hrLow,
                 keyboardType: const TextInputType.numberWithOptions(decimal: false),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: AppColors.ink),
                 decoration: deco('Heart rate LOW (bpm)'),
                 validator: (v) => _range(v, 25, 90, 'bpm'),
               ),
               TextFormField(
                 controller: _sleepLow,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: AppColors.ink),
                 decoration: deco('Sleep LOW (hours per night)'),
                 validator: (v) => _range(v, 0, 12, 'h'),
               ),
               const SizedBox(height: 12),
               Text(
                 'Out-of-range readings create a crisis alert (30 min cooldown per vital).',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                style: TextStyle(color: AppColors.ink.withValues(alpha: 0.6), fontSize: 12),
               ),
             ],
           ),

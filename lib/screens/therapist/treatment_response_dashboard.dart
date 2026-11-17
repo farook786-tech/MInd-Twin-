@@ -157,7 +157,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
                 color: AppTheme.primaryIndigo.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.trending_up_rounded,
+              child: Icon(Icons.trending_up_rounded,
                   color: AppTheme.primaryIndigo, size: 20),
             ),
             const SizedBox(width: 12),
@@ -182,7 +182,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
                     child: Text(
                       _error!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppTheme.riskRed),
+                      style: TextStyle(color: AppTheme.riskRed),
                     ),
                   ),
                 )
@@ -219,7 +219,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.2),
@@ -231,10 +231,10 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Cohort Performance Summary',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.ink,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -300,7 +300,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: AppColors.ink.withValues(alpha: 0.5),
               fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
@@ -318,7 +318,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
           child: Text(
             'No patients assigned yet',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: AppColors.ink.withValues(alpha: 0.5),
             ),
           ),
         ),
@@ -328,10 +328,10 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Patient Treatment Progress',
           style: TextStyle(
-            color: Colors.white,
+            color: AppColors.ink,
             fontSize: 16,
             fontWeight: FontWeight.w700,
           ),
@@ -401,8 +401,8 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
                   children: [
                     Text(
                       patient['name'] as String,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.ink,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -411,7 +411,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
                     Text(
                       patient['email'] as String,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppColors.ink.withValues(alpha: 0.5),
                         fontSize: 11,
                       ),
                     ),
@@ -448,9 +448,9 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
                   child: _buildScoreColumn('Baseline', baselineScore.toString()),
                 ),
                 const SizedBox(width: 8),
-                const Icon(
+                Icon(
                   Icons.arrow_forward_rounded,
-                  color: Colors.white30,
+                  color: AppColors.ink30,
                   size: 16,
                 ),
                 const SizedBox(width: 8),
@@ -480,7 +480,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
                     Text(
                       'Response Rate',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: AppColors.ink.withValues(alpha: 0.7),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -501,7 +501,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
                   child: LinearProgressIndicator(
                     value: responsePercentage / 100,
                     minHeight: 6,
-                    backgroundColor: Colors.white.withValues(alpha: 0.1),
+                    backgroundColor: AppColors.ink.withValues(alpha: 0.1),
                     valueColor: AlwaysStoppedAnimation<Color>(statusColor),
                   ),
                 ),
@@ -512,7 +512,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
               Text(
                 'Tracked for $weeksSince weeks',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.4),
+                  color: AppColors.ink.withValues(alpha: 0.4),
                   fontSize: 11,
                 ),
               ),
@@ -520,13 +520,13 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: AppColors.ink.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 'Awaiting baseline assessment or follow-up',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
+                  color: AppColors.ink.withValues(alpha: 0.5),
                   fontSize: 12,
                 ),
               ),
@@ -544,7 +544,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
         color: AppTheme.backgroundDark,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: (color ?? Colors.white.withValues(alpha: 0.2)),
+          color: (color ?? AppColors.ink.withValues(alpha: 0.2)),
           width: 1,
         ),
       ),
@@ -553,7 +553,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
+              color: AppColors.ink.withValues(alpha: 0.6),
               fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
@@ -562,7 +562,7 @@ class _TreatmentResponseDashboardState extends State<TreatmentResponseDashboard>
           Text(
             score,
             style: TextStyle(
-              color: color ?? Colors.white,
+              color: color ?? AppColors.ink,
               fontSize: 14,
               fontWeight: FontWeight.bold,
             ),

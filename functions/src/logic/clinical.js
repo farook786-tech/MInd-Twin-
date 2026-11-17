@@ -15,6 +15,7 @@
  */
 
 const { SEVERITY_RANK } = require('./constants');
+const cssrs = require('./cssrs');
 
 const RISK_SCORE_CRISIS = 75;
 const RISK_SCORE_CRITICAL = 90;
@@ -109,12 +110,18 @@ function evaluateDailyLog(data) {
 
 /**
  * Raises ONE combined evaluation per assessment.
+ *  - type 'cssrs': C-SSRS triage only (see top of evaluateAssessment)
  *  - PHQ-9 item 9 > 0 (any suicidal-ideation answer) => phq9_severe, critical
  *  - PHQ-9 total >= 20                               => phq9_severe, high
  *  - riskScore >= 75                                 => high_risk, high/critical
  * @return {null|{eventType:string, severity:string, reasons:string[]}}
  */
 function evaluateAssessment(data) {
+  // C-SSRS screener (type 'cssrs'): Columbia triage, see ./cssrs.js.
+  //   high     => cssrs_high, critical (immediate safety assessment)
+  //   moderate => cssrs_moderate, medium (clinician review soon)
+  //   low/none => no crisis event (shown on the therapist's Clinical status card)
+  if (data && data.type === 'cssrs') return cssrs.evaluateCssrsAssessment(data);
   const { total, item9 } = extractPhq9(data);
   const risk = extractRiskScore(data);
   const reasons = [];
@@ -143,9 +150,12 @@ function evaluateAssessment(data) {
 function describeClinicalAlert(patientName, source, evaluation) {
   const name = patientName || 'Patient';
   const what = source === 'assessment' ? 'assessment' : 'daily check-in';
-  const title = evaluation.eventType === 'phq9_severe' ?
-    `${evaluation.severity === 'critical' ? 'URGENT: ' : ''}PHQ-9 alert: ${name}` :
-    `High risk check-in: ${name}`;
+  const urgent = evaluation.severity === 'critical' ? 'URGENT: ' : '';
+  let title;
+  if (evaluation.eventType === 'phq9_severe') title = `${urgent}PHQ-9 alert: ${name}`;
+  else if (evaluation.eventType === 'cssrs_high') title = `${urgent}C-SSRS high risk: ${name}`;
+  else if (evaluation.eventType === 'cssrs_moderate') title = `C-SSRS moderate risk: ${name}`;
+  else title = `High check-in indicator: ${name}`;
   const message = `${name}'s ${what} needs review: ${evaluation.reasons.join('; ')}.`;
   return { title, message };
 }
@@ -172,6 +182,7 @@ function planCrisisMerge(existing, verified) {
     item9: verified.phq9Item9 === undefined ? null : verified.phq9Item9,
     riskScore: verified.riskScore === undefined ? null : verified.riskScore,
   };
+  if (verified.cssrsRisk !== undefined) fields.cssrsRisk = verified.cssrsRisk;
   for (const [k, v] of Object.entries(fields)) {
     if (JSON.stringify(prev[k]) !== JSON.stringify(v)) update[`serverVerified.${k}`] = v;
   }

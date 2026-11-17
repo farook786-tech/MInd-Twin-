@@ -548,7 +548,7 @@ class BackendApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      print('Shared appointment booking error: $e');
+      debugPrint('Shared appointment booking error: $e');
       return false;
     }
   }
@@ -581,7 +581,7 @@ class BackendApiService {
       }
       return const [];
     } catch (e) {
-      print('Shared appointments fetch error: $e');
+      debugPrint('Shared appointments fetch error: $e');
       return const [];
     }
   }
@@ -601,7 +601,7 @@ class BackendApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      print('Shared treatment plan send error: $e');
+      debugPrint('Shared treatment plan send error: $e');
       return false;
     }
   }
@@ -634,7 +634,7 @@ class BackendApiService {
       }
       return const [];
     } catch (e) {
-      print('Shared treatment plans fetch error: $e');
+      debugPrint('Shared treatment plans fetch error: $e');
       return const [];
     }
   }
@@ -654,7 +654,7 @@ class BackendApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      print('Mark appointment seen error: $e');
+      debugPrint('Mark appointment seen error: $e');
       return false;
     }
   }
@@ -674,7 +674,7 @@ class BackendApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      print('Mark appointment accepted error: $e');
+      debugPrint('Mark appointment accepted error: $e');
       return false;
     }
   }
@@ -694,7 +694,7 @@ class BackendApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      print('Mark treatment plan seen error: $e');
+      debugPrint('Mark treatment plan seen error: $e');
       return false;
     }
   }
@@ -714,7 +714,7 @@ class BackendApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      print('Mark treatment plan accepted error: $e');
+      debugPrint('Mark treatment plan accepted error: $e');
       return false;
     }
   }
@@ -734,7 +734,7 @@ class BackendApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      print('Mark message read error: $e');
+      debugPrint('Mark message read error: $e');
       return false;
     }
   }
@@ -758,7 +758,7 @@ class BackendApiService {
       }
       return {};
     } catch (e) {
-      print('Treatment summary error: $e');
+      debugPrint('Treatment summary error: $e');
       return {};
     }
   }
@@ -778,7 +778,7 @@ class BackendApiService {
       }
       return {};
     } catch (e) {
-      print('Engagement metrics error: $e');
+      debugPrint('Engagement metrics error: $e');
       return {};
     }
   }
@@ -813,7 +813,7 @@ class BackendApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      print('Record heart rate data error: $e');
+      debugPrint('Record heart rate data error: $e');
       return false;
     }
   }
@@ -841,7 +841,7 @@ class BackendApiService {
       }
       return {};
     } catch (e) {
-      print('Get reminder stats error: $e');
+      debugPrint('Get reminder stats error: $e');
       return {};
     }
   }
@@ -857,7 +857,7 @@ class BackendApiService {
       await file.writeAsBytes(bytes);
       return file.path;
     } catch (e) {
-      print('Save PDF error: $e');
+      debugPrint('Save PDF error: $e');
       return null;
     }
   }
@@ -881,7 +881,7 @@ class BackendApiService {
       }
       return null;
     } catch (e) {
-      print('Download treatment report error: $e');
+      debugPrint('Download treatment report error: $e');
       return null;
     }
   }
@@ -904,7 +904,7 @@ class BackendApiService {
       }
       return null;
     } catch (e) {
-      print('Download progress report error: $e');
+      debugPrint('Download progress report error: $e');
       return null;
     }
   }
@@ -928,7 +928,7 @@ class BackendApiService {
       }
       return null;
     } catch (e) {
-      print('Download wearable report error: $e');
+      debugPrint('Download wearable report error: $e');
       return null;
     }
   }

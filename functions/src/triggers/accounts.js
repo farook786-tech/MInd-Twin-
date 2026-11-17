@@ -1,38 +1,23 @@
 'use strict';
 
 /**
- * Account lifecycle cleanup.
+ * Account lifecycle cleanup (Cloud Functions / Blaze).
  *
  * When a user deletes their Firebase Auth account (AuthService.deleteAccount),
  * clients cannot delete server-owned docs, so this trigger removes the
- * personal profile and every push token for that uid. Without it, the
- * profile (name, email, risk snapshot) would linger and pushes could still be
- * routed to a device the person no longer controls.
+ * personal profile and every push token for that uid. Clinical records are
+ * intentionally RETAINED (see ../core/triggers.js cleanupDeletedUser).
  *
- * Clinical records (daily_logs, clinical_assessments, crisis_events, vitals,
- * journal_entries, appointments) are intentionally RETAINED: health-record
- * retention obligations apply and the treating therapist may need them.
- * Erasure of clinical records must go through the clinic's documented
- * data-deletion process, not an automatic trigger.
+ * On the free Spark plan there is no Auth trigger; the backend runs the same
+ * cleanup from a periodic orphan sweep (backend/src/firebase/orphanSweep.js).
  */
 
 const functionsV1 = require('firebase-functions/v1');
-const { logger } = require('firebase-functions');
-const { db } = require('../admin');
 const { REGION } = require('../logic/constants');
+const { core } = require('../runtime');
 
-async function cleanupDeletedUser(uid) {
-  const firestore = db();
-
-  const tokens = await firestore.collection('fcm_tokens').where('uid', '==', uid).get();
-  const batch = firestore.batch();
-  tokens.forEach((doc) => batch.delete(doc.ref));
-  batch.delete(firestore.collection('users').doc(uid));
-  batch.delete(firestore.collection('alert_cooldowns').doc(uid));
-  await batch.commit();
-
-  logger.info('Deleted account cleanup complete', { uid, tokensRemoved: tokens.size });
-  return { tokensRemoved: tokens.size };
+function cleanupDeletedUser(uid) {
+  return core().triggers.cleanupDeletedUser(uid);
 }
 
 const onAuthUserDeleted = functionsV1

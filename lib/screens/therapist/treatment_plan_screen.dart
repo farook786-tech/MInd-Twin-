@@ -83,11 +83,11 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.note_alt_outlined, size: 64, color: Colors.white.withValues(alpha: 0.3)),
+          Icon(Icons.note_alt_outlined, size: 64, color: AppColors.ink.withValues(alpha: 0.3)),
           const SizedBox(height: 16),
           Text(
             'No active treatment plan',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 16),
+            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.6), fontSize: 16),
           ),
           const SizedBox(height: 32),
           if (_allPlans.isNotEmpty) ...[
@@ -121,13 +121,13 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
                 children: [
                   Row(
                     children: [
-                      const Text(
+                      Text(
                         'Active Plan',
-                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        style: TextStyle(color: AppColors.ink, fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                       const Spacer(),
                       IconButton(
-                        icon: const Icon(Icons.history, color: Colors.white),
+                        icon: Icon(Icons.history, color: AppColors.ink),
                         onPressed: _showPlanHistory,
                         tooltip: 'View history',
                       ),
@@ -136,7 +136,7 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
                   const SizedBox(height: 12),
                   Text(
                     'Created: ${DateFormat('MMM dd, yyyy').format(plan.createdAt)}',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                    style: TextStyle(color: AppColors.ink.withValues(alpha: 0.6), fontSize: 13),
                   ),
                   const SizedBox(height: 16),
                   
@@ -147,14 +147,14 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Overall Progress', style: TextStyle(color: Colors.white70)),
-                          Text('$progress%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          Text('Overall Progress', style: TextStyle(color: AppColors.ink70)),
+                          Text('$progress%', style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const SizedBox(height: 8),
                       LinearProgressIndicator(
                         value: progress / 100,
-                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        backgroundColor: AppColors.ink.withValues(alpha: 0.1),
                         valueColor: AlwaysStoppedAnimation(progress >= 75 ? AppTheme.safeGreen : AppTheme.primaryIndigo),
                         minHeight: 8,
                       ),
@@ -198,8 +198,8 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
               ),
               if (plan.medicationNotes != null) ...[
                 const SizedBox(height: 12),
-                const Text('Medication Notes:', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                Text(plan.medicationNotes!, style: const TextStyle(color: Colors.white)),
+                Text('Medication Notes:', style: TextStyle(color: AppColors.ink70, fontSize: 12)),
+                Text(plan.medicationNotes!, style: TextStyle(color: AppColors.ink)),
               ],
             ],
           ),
@@ -225,7 +225,7 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
                   label: const Text('Update Progress'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.primaryIndigo,
-                    side: const BorderSide(color: AppTheme.primaryIndigo),
+                    side: BorderSide(color: AppTheme.primaryIndigo),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
@@ -272,7 +272,7 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
           children: [
             Text(
               title,
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(color: AppColors.ink, fontSize: 16, fontWeight: FontWeight.bold),
             ),
             if (children.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -290,9 +290,9 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$label:', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w500)),
+          Text('$label:', style: TextStyle(color: AppColors.ink70, fontWeight: FontWeight.w500)),
           const SizedBox(width: 8),
-          Expanded(child: Text(value, style: const TextStyle(color: Colors.white))),
+          Expanded(child: Text(value, style: TextStyle(color: AppColors.ink))),
         ],
       ),
     );
@@ -308,7 +308,7 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
       ),
       child: Text(
         text,
-        style: const TextStyle(color: AppTheme.primaryIndigo, fontSize: 12),
+        style: TextStyle(color: AppTheme.primaryIndigo, fontSize: 12),
       ),
     );
   }
@@ -330,7 +330,7 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
                 Expanded(
                   child: Text(
                     goal.description,
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                    style: TextStyle(color: AppColors.ink, fontSize: 14, fontWeight: FontWeight.w500),
                   ),
                 ),
                 Container(
@@ -350,25 +350,25 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
             const SizedBox(height: 8),
             Text(
               'Target: ${goal.targetDate}',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
+              style: TextStyle(color: AppColors.ink.withValues(alpha: 0.5), fontSize: 12),
             ),
             const SizedBox(height: 12),
             LinearProgressIndicator(
               value: progress / 100,
-              backgroundColor: Colors.white.withValues(alpha: 0.1),
+              backgroundColor: AppColors.ink.withValues(alpha: 0.1),
               valueColor: AlwaysStoppedAnimation(statusColor),
               minHeight: 6,
             ),
             const SizedBox(height: 4),
             Text(
               '$progress% complete',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11),
+              style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7), fontSize: 11),
             ),
             if (goal.progressNotes != null) ...[
               const SizedBox(height: 8),
               Text(
                 goal.progressNotes!,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12, fontStyle: FontStyle.italic),
+                style: TextStyle(color: AppColors.ink.withValues(alpha: 0.6), fontSize: 12, fontStyle: FontStyle.italic),
               ),
             ],
           ],
@@ -395,10 +395,10 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: const Text('Send Treatment Plan To Patient?', style: TextStyle(color: Colors.white)),
+        title: Text('Send Treatment Plan To Patient?', style: TextStyle(color: AppColors.ink)),
         content: Text(
           'Send the active treatment plan to ${plan.patientName} now?\n\nDiagnosis: ${plan.primaryDiagnosis}',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.ink70),
         ),
         actions: [
           TextButton(
@@ -470,7 +470,7 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: const Text('Treatment Plan History', style: TextStyle(color: Colors.white)),
+        title: Text('Treatment Plan History', style: TextStyle(color: AppColors.ink)),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -479,10 +479,10 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
             itemBuilder: (context, index) {
               final plan = _allPlans[index];
               return ListTile(
-                title: Text(plan.primaryDiagnosis, style: const TextStyle(color: Colors.white)),
+                title: Text(plan.primaryDiagnosis, style: TextStyle(color: AppColors.ink)),
                 subtitle: Text(
                   'Created: ${DateFormat('MMM dd, yyyy').format(plan.createdAt)}',
-                  style: const TextStyle(color: Colors.white54),
+                  style: TextStyle(color: AppColors.ink54),
                 ),
                 trailing: Text(
                   plan.status.toUpperCase(),
@@ -591,10 +591,10 @@ class _TreatmentPlanScreenState extends State<TreatmentPlanScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: const Text('Complete Treatment Plan?', style: TextStyle(color: Colors.white)),
-        content: const Text(
+        title: Text('Complete Treatment Plan?', style: TextStyle(color: AppColors.ink)),
+        content: Text(
           'Mark this treatment plan as completed? This action cannot be undone.',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.ink70),
         ),
         actions: [
           TextButton(
@@ -682,18 +682,18 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
           children: [
             Row(
               children: [
-                const Text(
+                Text(
                   'New Treatment Plan',
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: AppColors.ink, fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  icon: Icon(Icons.close, color: AppColors.ink),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
             ),
-            const Divider(color: Colors.white24),
+            Divider(color: AppColors.ink24),
             Expanded(
               child: Form(
                 key: _formKey,
@@ -702,14 +702,14 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Diagnosis
-                      const Text('Primary Diagnosis *', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      Text('Primary Diagnosis *', style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _primaryDiagnosisController,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: AppColors.ink),
                         decoration: InputDecoration(
                           hintText: 'e.g., Major Depressive Disorder',
-                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                          hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.4)),
                           filled: true,
                           fillColor: AppTheme.backgroundDark,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -720,10 +720,10 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                       
                       TextFormField(
                         controller: _secondaryDiagnosesController,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: AppColors.ink),
                         decoration: InputDecoration(
                           labelText: 'Secondary Diagnoses',
-                          labelStyle: const TextStyle(color: Colors.white70),
+                          labelStyle: TextStyle(color: AppColors.ink70),
                           filled: true,
                           fillColor: AppTheme.backgroundDark,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -733,12 +733,12 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                       
                       TextFormField(
                         controller: _diagnosticCodesController,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: AppColors.ink),
                         decoration: InputDecoration(
                           labelText: 'ICD-10 Codes',
                           hintText: 'e.g., F32.1, F41.1',
-                          labelStyle: const TextStyle(color: Colors.white70),
-                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                          labelStyle: TextStyle(color: AppColors.ink70),
+                          hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.3)),
                           filled: true,
                           fillColor: AppTheme.backgroundDark,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -747,7 +747,7 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                       const SizedBox(height: 24),
                       
                       // Treatment approach
-                      const Text('Treatment Approach *', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      Text('Treatment Approach *', style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         initialValue: _treatmentApproach,
@@ -757,12 +757,12 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                           fillColor: AppTheme.backgroundDark,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        items: const [
-                          DropdownMenuItem(value: 'CBT', child: Text('Cognitive Behavioral Therapy (CBT)', style: TextStyle(color: Colors.white))),
-                          DropdownMenuItem(value: 'DBT', child: Text('Dialectical Behavior Therapy (DBT)', style: TextStyle(color: Colors.white))),
-                          DropdownMenuItem(value: 'Psychodynamic', child: Text('Psychodynamic Therapy', style: TextStyle(color: Colors.white))),
-                          DropdownMenuItem(value: 'Humanistic', child: Text('Humanistic Therapy', style: TextStyle(color: Colors.white))),
-                          DropdownMenuItem(value: 'Integrative', child: Text('Integrative Approach', style: TextStyle(color: Colors.white))),
+                        items: [
+                          DropdownMenuItem(value: 'CBT', child: Text('Cognitive Behavioral Therapy (CBT)', style: TextStyle(color: AppColors.ink))),
+                          DropdownMenuItem(value: 'DBT', child: Text('Dialectical Behavior Therapy (DBT)', style: TextStyle(color: AppColors.ink))),
+                          DropdownMenuItem(value: 'Psychodynamic', child: Text('Psychodynamic Therapy', style: TextStyle(color: AppColors.ink))),
+                          DropdownMenuItem(value: 'Humanistic', child: Text('Humanistic Therapy', style: TextStyle(color: AppColors.ink))),
+                          DropdownMenuItem(value: 'Integrative', child: Text('Integrative Approach', style: TextStyle(color: AppColors.ink))),
                         ],
                         onChanged: (v) => setState(() => _treatmentApproach = v!),
                       ),
@@ -774,7 +774,7 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Frequency', style: TextStyle(color: Colors.white70)),
+                                Text('Frequency', style: TextStyle(color: AppColors.ink70)),
                                 const SizedBox(height: 8),
                                 DropdownButtonFormField<String>(
                                   initialValue: _sessionFrequency,
@@ -784,10 +784,10 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                                     fillColor: AppTheme.backgroundDark,
                                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
-                                  items: const [
-                                    DropdownMenuItem(value: 'weekly', child: Text('Weekly', style: TextStyle(color: Colors.white))),
-                                    DropdownMenuItem(value: 'biweekly', child: Text('Bi-weekly', style: TextStyle(color: Colors.white))),
-                                    DropdownMenuItem(value: 'monthly', child: Text('Monthly', style: TextStyle(color: Colors.white))),
+                                  items: [
+                                    DropdownMenuItem(value: 'weekly', child: Text('Weekly', style: TextStyle(color: AppColors.ink))),
+                                    DropdownMenuItem(value: 'biweekly', child: Text('Bi-weekly', style: TextStyle(color: AppColors.ink))),
+                                    DropdownMenuItem(value: 'monthly', child: Text('Monthly', style: TextStyle(color: AppColors.ink))),
                                   ],
                                   onChanged: (v) => setState(() => _sessionFrequency = v!),
                                 ),
@@ -799,7 +799,7 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Duration (weeks)', style: TextStyle(color: Colors.white70)),
+                                Text('Duration (weeks)', style: TextStyle(color: AppColors.ink70)),
                                 const SizedBox(height: 8),
                                 DropdownButtonFormField<int>(
                                   initialValue: _estimatedDurationWeeks,
@@ -809,12 +809,12 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                                     fillColor: AppTheme.backgroundDark,
                                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
-                                  items: const [
-                                    DropdownMenuItem(value: 8, child: Text('8 weeks', style: TextStyle(color: Colors.white))),
-                                    DropdownMenuItem(value: 12, child: Text('12 weeks', style: TextStyle(color: Colors.white))),
-                                    DropdownMenuItem(value: 16, child: Text('16 weeks', style: TextStyle(color: Colors.white))),
-                                    DropdownMenuItem(value: 24, child: Text('24 weeks', style: TextStyle(color: Colors.white))),
-                                    DropdownMenuItem(value: 52, child: Text('52 weeks (1 year)', style: TextStyle(color: Colors.white))),
+                                  items: [
+                                    DropdownMenuItem(value: 8, child: Text('8 weeks', style: TextStyle(color: AppColors.ink))),
+                                    DropdownMenuItem(value: 12, child: Text('12 weeks', style: TextStyle(color: AppColors.ink))),
+                                    DropdownMenuItem(value: 16, child: Text('16 weeks', style: TextStyle(color: AppColors.ink))),
+                                    DropdownMenuItem(value: 24, child: Text('24 weeks', style: TextStyle(color: AppColors.ink))),
+                                    DropdownMenuItem(value: 52, child: Text('52 weeks (1 year)', style: TextStyle(color: AppColors.ink))),
                                   ],
                                   onChanged: (v) => setState(() => _estimatedDurationWeeks = v!),
                                 ),
@@ -826,12 +826,12 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                       const SizedBox(height: 24),
                       
                       // Modalities
-                      const Text('Treatment Modalities', style:TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      Text('Treatment Modalities', style:TextStyle(color: AppColors.ink, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       CheckboxListTile(
                         value: _includesIndividual,
                         onChanged: (v) => setState(() => _includesIndividual = v ?? true),
-                        title: const Text('Individual Therapy', style: TextStyle(color: Colors.white)),
+                        title: Text('Individual Therapy', style: TextStyle(color: AppColors.ink)),
                         activeColor: AppTheme.primaryIndigo,
                         tileColor: AppTheme.backgroundDark,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -840,7 +840,7 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                       CheckboxListTile(
                         value: _includesGroup,
                         onChanged: (v) => setState(() => _includesGroup = v ?? false),
-                        title: const Text('Group Therapy', style: TextStyle(color: Colors.white)),
+                        title: Text('Group Therapy', style: TextStyle(color: AppColors.ink)),
                         activeColor: AppTheme.primaryIndigo,
                         tileColor: AppTheme.backgroundDark,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -849,7 +849,7 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                       CheckboxListTile(
                         value: _includesMedication,
                         onChanged: (v) => setState(() => _includesMedication = v ?? false),
-                        title: const Text('Medication Management', style: TextStyle(color: Colors.white)),
+                        title: Text('Medication Management', style: TextStyle(color: AppColors.ink)),
                         activeColor: AppTheme.primaryIndigo,
                         tileColor: AppTheme.backgroundDark,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -858,11 +858,11 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _medicationNotesController,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(color: AppColors.ink),
                           maxLines: 2,
                           decoration: InputDecoration(
                             labelText: 'Medication Notes',
-                            labelStyle: const TextStyle(color: Colors.white70),
+                            labelStyle: TextStyle(color: AppColors.ink70),
                             filled: true,
                             fillColor: AppTheme.backgroundDark,
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -874,7 +874,7 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
                       // Goals
                       Row(
                         children: [
-                          const Text('Treatment Goals', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          Text('Treatment Goals', style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.bold)),
                           const Spacer(),
                           TextButton.icon(
                             onPressed: _addGoal,
@@ -914,8 +914,8 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
       color: AppTheme.backgroundDark,
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text(goal.description, style: const TextStyle(color: Colors.white, fontSize: 14)),
-        subtitle: Text('Target: ${goal.targetDate}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        title: Text(goal.description, style: TextStyle(color: AppColors.ink, fontSize: 14)),
+        subtitle: Text('Target: ${goal.targetDate}', style: TextStyle(color: AppColors.ink54, fontSize: 12)),
         trailing: IconButton(
           icon: const Icon(Icons.delete, color: Colors.red, size: 20),
           onPressed: () => setState(() => _goals.remove(goal)),
@@ -933,19 +933,19 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
         
         return AlertDialog(
           backgroundColor: AppTheme.cardDark,
-          title: const Text('Add Goal', style: TextStyle(color: Colors.white)),
+          title: Text('Add Goal', style: TextStyle(color: AppColors.ink)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextFormField(
                 controller: descController,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: AppColors.ink),
                 maxLines: 2,
                 decoration: InputDecoration(
                   labelText: 'Goal Description',
                   hintText: 'e.g., Reduce anxiety symptoms by 50%',
-                  labelStyle: const TextStyle(color: Colors.white70),
-                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                  labelStyle: TextStyle(color: AppColors.ink70),
+                  hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.3)),
                   filled: true,
                   fillColor: AppTheme.backgroundDark,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -954,10 +954,10 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: targetController,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: AppColors.ink),
                 decoration: InputDecoration(
                   labelText: 'Target Date/Timeframe',
-                  labelStyle: const TextStyle(color: Colors.white70),
+                  labelStyle: TextStyle(color: AppColors.ink70),
                   filled: true,
                   fillColor: AppTheme.backgroundDark,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -1034,7 +1034,7 @@ class _TreatmentPlanFormDialogState extends State<_TreatmentPlanFormDialog> {
     widget.onSave(plan);
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text('✅ Treatment plan created successfully'),
         backgroundColor: AppTheme.safeGreen,
       ),
@@ -1080,9 +1080,9 @@ class _GoalProgressDialogState extends State<_GoalProgressDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: AppTheme.cardDark,
-      title: const Text(
+      title: Text(
         'Update Goal Progress',
-        style: TextStyle(color: Colors.white),
+        style: TextStyle(color: AppColors.ink),
       ),
       content: SizedBox(
         width: double.maxFinite,
@@ -1096,8 +1096,8 @@ class _GoalProgressDialogState extends State<_GoalProgressDialog> {
               children: [
                 Text(
                   goal.description,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: AppColors.ink,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -1107,7 +1107,7 @@ class _GoalProgressDialogState extends State<_GoalProgressDialog> {
                     Expanded(
                       child: Text(
                         '${goal.progressPercentage}%',
-                        style: const TextStyle(color: Colors.white70),
+                        style: TextStyle(color: AppColors.ink70),
                       ),
                     ),
                     Expanded(
@@ -1128,12 +1128,12 @@ class _GoalProgressDialogState extends State<_GoalProgressDialog> {
                 DropdownButtonFormField<String>(
                   initialValue: goal.status,
                   dropdownColor: AppTheme.cardDark,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: AppColors.ink),
+                  decoration: InputDecoration(
                     labelText: 'Status',
-                    labelStyle: TextStyle(color: Colors.white54),
+                    labelStyle: TextStyle(color: AppColors.ink54),
                     enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white24),
+                      borderSide: BorderSide(color: AppColors.ink24),
                     ),
                   ),
                   items: const [
@@ -1151,17 +1151,17 @@ class _GoalProgressDialogState extends State<_GoalProgressDialog> {
                 const SizedBox(height: 8),
                 TextField(
                   controller: TextEditingController(text: goal.progressNotes),
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
+                  style: TextStyle(color: AppColors.ink),
+                  decoration: InputDecoration(
                     hintText: 'Progress notes (optional)',
-                    hintStyle: TextStyle(color: Colors.white38),
+                    hintStyle: TextStyle(color: AppColors.ink38),
                     enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white24),
+                      borderSide: BorderSide(color: AppColors.ink24),
                     ),
                   ),
                   onChanged: (value) => goal.progressNotes = value,
                 ),
-                const Divider(color: Colors.white12, height: 24),
+                Divider(color: AppColors.ink12, height: 24),
               ],
             );
           },

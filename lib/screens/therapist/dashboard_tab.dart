@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -7,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
 import 'appointments_screen.dart';
 import 'patients_tab.dart';
 import 'real_time_alerts_center_screen.dart';
@@ -67,7 +67,7 @@ class DashboardTab extends StatelessWidget {
                             child: _CenteredStateCard(
                               icon: Icons.autorenew_rounded,
                               title: 'Loading Clinical Data',
-                              subtitle: 'Syncing patient streams and risk analytics...',
+                              subtitle: 'Syncing patient streams...',
                               isLoading: true,
                             ),
                           );
@@ -151,13 +151,13 @@ class DashboardTab extends StatelessWidget {
                                       title: 'Total Patients',
                                       value: '$totalPatients',
                                       subtitle: 'Assigned caseload',
-                                      color: Colors.white,
+                                      color: AppColors.ink,
                                     ),
                                     _SummaryCardData(
                                       icon: Icons.warning_amber_rounded,
-                                      title: 'High Risk Today',
+                                      title: 'High Check-in Strain Today',
                                       value: '$highRiskToday',
-                                      subtitle: 'Risk score >= 50%',
+                                      subtitle: 'Check-in indicator >= 50 (not diagnostic)',
                                       color: AppTheme.warningAmber,
                                     ),
                                     _SummaryCardData(
@@ -178,7 +178,7 @@ class DashboardTab extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 16),
                                 _SectionCard(
-                                  title: 'Patient Risk Overview',
+                                  title: 'Check-in Indicator Overview (early warning)',
                                   child: patients.isEmpty
                                       ? const _InlineMutedState(
                                           text: 'No patients assigned to this therapist yet.',
@@ -205,7 +205,7 @@ class DashboardTab extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 16),
                                 _SectionCard(
-                                  title: 'Patient Risk Distribution',
+                                  title: 'Check-in Indicator Distribution (early warning)',
                                   child: _RiskBarChart(bucketCounts: riskBuckets),
                                 ),
                                 const SizedBox(height: 16),
@@ -299,18 +299,18 @@ class _DashboardHeader extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   '🧠 MindTwin',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.ink,
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.2,
@@ -320,7 +320,7 @@ class _DashboardHeader extends StatelessWidget {
               Text(
                 'Dr. $therapistName',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.88),
+                  color: AppColors.ink.withValues(alpha: 0.88),
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
@@ -331,7 +331,7 @@ class _DashboardHeader extends StatelessWidget {
           Text(
             'Clinical Dashboard',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.58),
+              color: AppColors.ink.withValues(alpha: 0.58),
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -366,7 +366,7 @@ class _SummaryGrid extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppTheme.cardDark,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,7 +380,7 @@ class _SummaryGrid extends StatelessWidget {
                     child: Text(
                       card.title,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.74),
+                        color: AppColors.ink.withValues(alpha: 0.74),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -399,7 +399,7 @@ class _SummaryGrid extends StatelessWidget {
               Text(
                 card.subtitle,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.48),
+                  color: AppColors.ink.withValues(alpha: 0.48),
                   fontSize: 11,
                 ),
               ),
@@ -454,8 +454,8 @@ class _CrisisAlertBanner extends StatelessWidget {
           children: [
             Text(
               '🚨 $alertCount Crisis Alert(s) Detected',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.ink,
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
               ),
@@ -464,7 +464,7 @@ class _CrisisAlertBanner extends StatelessWidget {
             Text(
               'Tap to view →',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.84),
+                color: AppColors.ink.withValues(alpha: 0.84),
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -493,15 +493,15 @@ class _SectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.ink,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -531,7 +531,7 @@ class _RiskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final riskColor = riskPercent == null ? Colors.white54 : _riskColor(riskPercent!);
+    final riskColor = riskPercent == null ? AppColors.ink54 : _riskColor(riskPercent!);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -539,7 +539,7 @@ class _RiskRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.backgroundDark,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: Row(
         children: [
@@ -549,8 +549,8 @@ class _RiskRow extends StatelessWidget {
               name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.ink,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -585,7 +585,7 @@ class _RiskRow extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: AppColors.ink.withValues(alpha: 0.8),
                 fontSize: 12,
               ),
             ),
@@ -606,7 +606,7 @@ class _RiskRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.62),
+                      color: AppColors.ink.withValues(alpha: 0.62),
                       fontSize: 11,
                     ),
                   ),
@@ -642,7 +642,7 @@ class _RiskBarChart extends StatelessWidget {
             horizontalInterval: 1,
             getDrawingHorizontalLine: (value) {
               return FlLine(
-                color: Colors.white.withValues(alpha: 0.09),
+                color: AppColors.ink.withValues(alpha: 0.09),
                 strokeWidth: 1,
               );
             },
@@ -658,7 +658,7 @@ class _RiskBarChart extends StatelessWidget {
                   return Text(
                     value.toInt().toString(),
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: AppColors.ink.withValues(alpha: 0.6),
                       fontSize: 10,
                     ),
                   );
@@ -678,7 +678,7 @@ class _RiskBarChart extends StatelessWidget {
                     child: Text(
                       labels[i],
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.76),
+                        color: AppColors.ink.withValues(alpha: 0.76),
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -735,7 +735,7 @@ class _MoodLineChart extends StatelessWidget {
             drawVerticalLine: false,
             horizontalInterval: 2,
             getDrawingHorizontalLine: (value) => FlLine(
-              color: Colors.white.withValues(alpha: 0.1),
+              color: AppColors.ink.withValues(alpha: 0.1),
               strokeWidth: 1,
             ),
           ),
@@ -752,7 +752,7 @@ class _MoodLineChart extends StatelessWidget {
                   return Text(
                     'D${value.toInt() + 1}',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.56),
+                      color: AppColors.ink.withValues(alpha: 0.56),
                       fontSize: 10,
                     ),
                   );
@@ -768,7 +768,7 @@ class _MoodLineChart extends StatelessWidget {
                   return Text(
                     value.toInt().toString(),
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.58),
+                      color: AppColors.ink.withValues(alpha: 0.58),
                       fontSize: 10,
                     ),
                   );
@@ -788,7 +788,7 @@ class _MoodLineChart extends StatelessWidget {
                   radius: 2.4,
                   color: AppTheme.accentCyan,
                   strokeWidth: 1,
-                  strokeColor: Colors.white.withValues(alpha: 0.8),
+                  strokeColor: AppColors.ink.withValues(alpha: 0.8),
                 ),
               ),
               belowBarData: BarAreaData(
@@ -853,12 +853,12 @@ class _QuickActionButton extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppTheme.backgroundDark,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
           ),
           child: Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.ink,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -900,15 +900,15 @@ class _CenteredStateCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isLoading)
-              const CircularProgressIndicator(color: AppTheme.primaryIndigo)
+              CircularProgressIndicator(color: AppTheme.primaryIndigo)
             else
               Icon(icon, color: color, size: 34),
             const SizedBox(height: 12),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.ink,
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
               ),
@@ -918,7 +918,7 @@ class _CenteredStateCard extends StatelessWidget {
               subtitle,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.62),
+                color: AppColors.ink.withValues(alpha: 0.62),
                 fontSize: 12,
               ),
             ),
@@ -942,12 +942,12 @@ class _InlineMutedState extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.backgroundDark,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
       ),
       child: Text(
         text,
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.56),
+          color: AppColors.ink.withValues(alpha: 0.56),
           fontSize: 12,
         ),
       ),
@@ -1105,7 +1105,7 @@ Color _trendColor(_TrendDirection trend) {
     case _TrendDirection.down:
       return AppTheme.safeGreen;
     case _TrendDirection.flat:
-      return Colors.white70;
+      return AppColors.ink70;
   }
 }
 
@@ -1156,10 +1156,10 @@ class _PartialErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, color: AppTheme.riskRed),
+          Icon(Icons.error_outline_rounded, color: AppTheme.riskRed),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(message, style: const TextStyle(color: Colors.white, fontSize: 12)),
+            child: Text(message, style: TextStyle(color: AppColors.ink, fontSize: 12)),
           ),
         ],
       ),
@@ -1256,25 +1256,27 @@ class _TherapistInviteCodeCardState extends State<TherapistInviteCodeCard> {
       _error = null;
     });
     try {
-      final result = await FirebaseFunctions.instance.httpsCallable('getMyInviteCode').call<dynamic>(<String, dynamic>{});
-      final data = result.data;
-      final code = data is Map ? data['inviteCode']?.toString() : null;
+      final result = await RoleService.instance.getMyInviteCode();
       if (!mounted) return;
+      if (result.success) {
+        final code = result.data['inviteCode']?.toString();
+        setState(() {
+          _code = (code == null || code.trim().isEmpty) ? null : code.trim();
+          _error = _code == null ? 'No invite code was returned. Try again.' : null;
+          _loading = false;
+        });
+        return;
+      }
       setState(() {
-        _code = (code == null || code.trim().isEmpty) ? null : code.trim();
-        _error = _code == null ? 'No invite code was returned. Try again.' : null;
         _loading = false;
-      });
-    } on FirebaseFunctionsException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = switch (e.code) {
+        _error = switch (result.code) {
           'permission-denied' || 'failed-precondition' =>
             'Your therapist account is not approved yet, so you cannot invite patients.',
           'unauthenticated' => 'Please sign in again.',
-          'unavailable' || 'deadline-exceeded' => 'Network unavailable. Tap retry.',
-          _ => 'Could not load invite code (${e.code}).',
+          // RoleService explains these (e.g. "MindTwin server is not reachable ...").
+          'unavailable' || 'deadline-exceeded' || 'resource-exhausted' || 'unimplemented' =>
+            result.message ?? 'Network unavailable. Tap retry.',
+          _ => 'Could not load invite code (${result.code}).',
         };
       });
     } catch (e) {
@@ -1308,7 +1310,7 @@ class _TherapistInviteCodeCardState extends State<TherapistInviteCodeCard> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.qr_code_rounded, color: AppTheme.primaryIndigo, size: 30),
+          Icon(Icons.qr_code_rounded, color: AppTheme.primaryIndigo, size: 30),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1316,11 +1318,11 @@ class _TherapistInviteCodeCardState extends State<TherapistInviteCodeCard> {
               children: [
                 Text(
                   'Your invite code',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 if (_loading)
-                  const SizedBox(
+                  SizedBox(
                     height: 18,
                     width: 18,
                     child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryIndigo),
@@ -1328,19 +1330,19 @@ class _TherapistInviteCodeCardState extends State<TherapistInviteCodeCard> {
                 else if (_code != null)
                   SelectableText(
                     _code!,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: AppColors.ink,
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 2,
                     ),
                   )
                 else
-                  Text(_error ?? 'Unavailable', style: const TextStyle(color: AppTheme.warningAmber, fontSize: 12)),
+                  Text(_error ?? 'Unavailable', style: TextStyle(color: AppTheme.warningAmber, fontSize: 12)),
                 const SizedBox(height: 4),
                 Text(
                   'Patients enter this code when they sign up or change therapist.',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
+                  style: TextStyle(color: AppColors.ink.withValues(alpha: 0.5), fontSize: 11),
                 ),
               ],
             ),
@@ -1348,13 +1350,13 @@ class _TherapistInviteCodeCardState extends State<TherapistInviteCodeCard> {
           if (_code != null)
             IconButton(
               tooltip: 'Copy invite code',
-              icon: const Icon(Icons.copy_rounded, color: Colors.white),
+              icon: Icon(Icons.copy_rounded, color: AppColors.ink),
               onPressed: _copy,
             )
           else if (!_loading)
             IconButton(
               tooltip: 'Retry',
-              icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+              icon: Icon(Icons.refresh_rounded, color: AppColors.ink),
               onPressed: _load,
             ),
         ],

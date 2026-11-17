@@ -75,8 +75,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: Text(title, style: const TextStyle(color: Colors.white)),
-        content: Text(message, style: const TextStyle(color: Colors.white70)),
+        title: Text(title, style: TextStyle(color: AppColors.ink)),
+        content: Text(message, style: TextStyle(color: AppColors.ink70)),
         actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
       ),
     );
@@ -109,11 +109,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppTheme.cardDark,
-          title: const Text('Accept request', style: TextStyle(color: Colors.white)),
+          title: Text('Accept request', style: TextStyle(color: AppColors.ink)),
           content: Text(
             '${a.patientName} proposed ${formatAppointmentTime(a.proposedAt!)} '
             '(${a.durationMinutes} min, ${a.isVirtual ? 'online' : 'in person'}).',
-            style: const TextStyle(color: Colors.white70),
+            style: TextStyle(color: AppColors.ink70),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Back')),
@@ -211,8 +211,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       return Scaffold(
         backgroundColor: AppTheme.backgroundDark,
         appBar: AppBar(backgroundColor: AppTheme.cardDark, title: Text(title)),
-        body: const Center(
-          child: Text('Please sign in again.', style: TextStyle(color: Colors.white)),
+        body: Center(
+          child: Text('Please sign in again.', style: TextStyle(color: AppColors.ink)),
         ),
       );
     }
@@ -289,7 +289,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   Widget _message(String text) => Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
+          child: Text(text, textAlign: TextAlign.center, style: TextStyle(color: AppColors.ink70)),
         ),
       );
 
@@ -299,7 +299,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 10),
-          child: Text(localTimeZoneHint(), style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          child: Text(localTimeZoneHint(), style: TextStyle(color: AppColors.ink38, fontSize: 12)),
         ),
         if (items.isEmpty)
           Padding(
@@ -327,12 +327,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       actions.addAll([
         TextButton(
           onPressed: () => _decline(a),
-          child: const Text('Decline', style: TextStyle(color: AppTheme.riskRed)),
+          child: Text('Decline', style: TextStyle(color: AppTheme.riskRed)),
         ),
         ElevatedButton(
           onPressed: () => _accept(a),
           style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.safeGreen, foregroundColor: Colors.white),
+              backgroundColor: AppTheme.safeGreen, foregroundColor: AppColors.ink),
           child: const Text('Accept'),
         ),
       ]);
@@ -342,12 +342,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         actions.addAll([
           TextButton(
             onPressed: () => _outcome(a, AppointmentStatus.noShow),
-            child: const Text('No-show', style: TextStyle(color: AppTheme.warningAmber)),
+            child: Text('No-show', style: TextStyle(color: AppTheme.warningAmber)),
           ),
           ElevatedButton(
             onPressed: () => _outcome(a, AppointmentStatus.completed),
             style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.safeGreen, foregroundColor: Colors.white),
+                backgroundColor: AppTheme.safeGreen, foregroundColor: AppColors.ink),
             child: const Text('Completed'),
           ),
         ]);
@@ -355,7 +355,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       if (a.canCancel) {
         actions.add(TextButton(
           onPressed: () => _cancel(a),
-          child: const Text('Cancel', style: TextStyle(color: AppTheme.riskRed)),
+          child: Text('Cancel', style: TextStyle(color: AppTheme.riskRed)),
         ));
       }
     } else if (a.status == AppointmentStatus.completed || a.status == AppointmentStatus.noShow) {
@@ -369,19 +369,19 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         children: [
           Row(
             children: [
-              Icon(a.isVirtual ? Icons.videocam : Icons.location_on, color: Colors.white70, size: 18),
+              Icon(a.isVirtual ? Icons.videocam : Icons.location_on, color: AppColors.ink70, size: 18),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(a.patientName,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+                    style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w700, fontSize: 15)),
               ),
               AppointmentStatusChip(status: a.status),
             ],
           ),
           const SizedBox(height: 8),
-          Text(whenLabel, style: const TextStyle(color: Colors.white, fontSize: 14)),
+          Text(whenLabel, style: TextStyle(color: AppColors.ink, fontSize: 14)),
           if (proposedPast)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 4),
               child: Text('Proposed time has passed — choose a new time when accepting.',
                   style: TextStyle(color: AppTheme.warningAmber, fontSize: 12)),
@@ -391,23 +391,23 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             '${a.durationMinutes} min • ${a.isVirtual ? 'Online' : 'In person'} • '
             '${a.requestedBy == 'patient' ? 'Requested by patient' : 'Booked by you'}'
             '${a.hasPendingWrites ? ' • syncing…' : ''}',
-            style: const TextStyle(color: Colors.white60, fontSize: 12),
+            style: TextStyle(color: AppColors.ink60, fontSize: 12),
           ),
           if (a.reason.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text('Reason: ${a.reason}', style: const TextStyle(color: Colors.white70)),
+            Text('Reason: ${a.reason}', style: TextStyle(color: AppColors.ink70)),
           ],
           if (a.notes.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(a.notes, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+            Text(a.notes, style: TextStyle(color: AppColors.ink60, fontSize: 13)),
           ],
           if (a.status == AppointmentStatus.cancelled && a.cancelledBy != null) ...[
             const SizedBox(height: 6),
             Text(a.cancelledBy == 'therapist' ? 'Cancelled by you' : 'Cancelled by patient',
-                style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                style: TextStyle(color: AppColors.ink60, fontSize: 12)),
           ],
           if (a.needsOutcome(now))
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 6),
               child: Text('Session ended — please record the outcome.',
                   style: TextStyle(color: AppTheme.warningAmber, fontSize: 12)),
@@ -529,7 +529,7 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
       builder: (context, snap) {
         if (snap.hasError) {
           return Text('Could not load your patients. ${AppointmentService.describeError(snap.error!)}',
-              style: const TextStyle(color: AppTheme.riskRed));
+              style: TextStyle(color: AppTheme.riskRed));
         }
         if (!snap.hasData) {
           return const Padding(
@@ -539,9 +539,9 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
         }
         final patients = snap.data!;
         if (patients.isEmpty) {
-          return const Text(
+          return Text(
             'No linked patients yet. Share your invite code so patients can join you.',
-            style: TextStyle(color: Colors.white70),
+            style: TextStyle(color: AppColors.ink70),
           );
         }
         final selected = patients.any((p) => p.id == _patientId) ? _patientId : null;
@@ -549,10 +549,10 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
           initialValue: selected,
           isExpanded: true,
           dropdownColor: AppTheme.cardDark,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
+          style: TextStyle(color: AppColors.ink),
+          decoration: InputDecoration(
             labelText: 'Patient',
-            labelStyle: TextStyle(color: Colors.white70),
+            labelStyle: TextStyle(color: AppColors.ink70),
           ),
           items: patients
               .map((p) => DropdownMenuItem(value: p.id, child: Text(p.name)))
@@ -580,22 +580,22 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('New session',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+            Text('New session',
+                style: TextStyle(color: AppColors.ink, fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             _patientPicker(),
             const SizedBox(height: 8),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.schedule, color: Colors.white70),
-              title: const Text('Start time', style: TextStyle(color: Colors.white70)),
-              subtitle: Text(formatAppointmentTime(_start), style: const TextStyle(color: Colors.white)),
-              trailing: const Icon(Icons.edit, color: Colors.white54),
+              leading: Icon(Icons.schedule, color: AppColors.ink70),
+              title: Text('Start time', style: TextStyle(color: AppColors.ink70)),
+              subtitle: Text(formatAppointmentTime(_start), style: TextStyle(color: AppColors.ink)),
+              trailing: Icon(Icons.edit, color: AppColors.ink54),
               onTap: _submitting ? null : _pickTime,
             ),
-            Text(localTimeZoneHint(), style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            Text(localTimeZoneHint(), style: TextStyle(color: AppColors.ink38, fontSize: 11)),
             const SizedBox(height: 12),
-            const Text('Duration', style: TextStyle(color: Colors.white70)),
+            Text('Duration', style: TextStyle(color: AppColors.ink70)),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -612,21 +612,21 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
               value: _virtual,
               onChanged: _submitting ? null : (v) => setState(() => _virtual = v),
               title: Text(_virtual ? 'Online (video)' : 'In person',
-                  style: const TextStyle(color: Colors.white)),
+                  style: TextStyle(color: AppColors.ink)),
             ),
             TextField(
               controller: _reason,
               enabled: !_submitting,
               maxLength: 300,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
+              style: TextStyle(color: AppColors.ink),
+              decoration: InputDecoration(
                 labelText: 'Purpose (optional, visible to patient)',
-                labelStyle: TextStyle(color: Colors.white70),
+                labelStyle: TextStyle(color: AppColors.ink70),
               ),
             ),
             if (_error != null) ...[
               const SizedBox(height: 8),
-              Text(_error!, style: const TextStyle(color: AppTheme.riskRed)),
+              Text(_error!, style: TextStyle(color: AppTheme.riskRed)),
             ],
             const SizedBox(height: 16),
             SizedBox(
@@ -635,7 +635,7 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
                 onPressed: _submitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryIndigo,
-                  foregroundColor: Colors.white,
+                  foregroundColor: AppColors.ink,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: _submitting

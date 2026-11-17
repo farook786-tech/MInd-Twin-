@@ -170,7 +170,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                   Text(
                     'Control how your data is used and shared',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: AppColors.ink.withValues(alpha: 0.6),
                       fontSize: 14,
                     ),
                     textAlign: TextAlign.center,
@@ -254,7 +254,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                 ),
                 child: Text(
                   _statusMessage!,
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  style: TextStyle(color: AppColors.ink, fontSize: 12),
                 ),
               ),
 
@@ -390,10 +390,10 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                     Expanded(
                       child: Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: AppColors.ink,
                         ),
                       ),
                     ),
@@ -423,7 +423,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                   description,
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: AppColors.ink.withValues(alpha: 0.6),
                   ),
                 ),
               ],
@@ -487,10 +487,10 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: AppColors.ink,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -498,7 +498,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                         description,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: AppColors.ink.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -506,7 +506,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
                 ),
                 Icon(
                   Icons.chevron_right,
-                  color: Colors.white.withValues(alpha: 0.3),
+                  color: AppColors.ink.withValues(alpha: 0.3),
                 ),
               ],
             ),
@@ -624,13 +624,13 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: const Text(
+        title: Text(
           '⚠️ Delete All Data?',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.ink),
         ),
-        content: const Text(
+        content: Text(
           'This will permanently delete all your data. This action cannot be undone.',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.ink70),
         ),
         actions: [
           TextButton(
@@ -669,6 +669,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
         );
         
         Future.delayed(const Duration(seconds: 2), () {
+          if (!mounted) return;
           Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
         });
       }
@@ -687,11 +688,11 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.cardDark,
-        title: const Text(
+        title: Text(
           'Privacy Policy',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.ink),
         ),
-        content: const SingleChildScrollView(
+        content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -699,7 +700,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
               Text(
                 '🔒 Your Privacy Matters',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -719,7 +720,7 @@ class _EthicsControlScreenState extends State<EthicsControlScreen> {
 
 Contact: privacy@mindtwin.ai''',
                 style: TextStyle(
-                  color: Colors.white70,
+                  color: AppColors.ink70,
                   fontSize: 12,
                   height: 1.6,
                 ),

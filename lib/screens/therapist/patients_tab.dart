@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../services/auth_service.dart';
+import '../../services/clinical_scoring.dart';
+import '../../widgets/clinical_status_card.dart';
 import '../chat/chat_screen.dart';
 import 'patient_detail_screen.dart';
 
@@ -15,6 +17,9 @@ class PatientsTab extends StatefulWidget {
 
 class _PatientsTabState extends State<PatientsTab> {
   String _search = '';
+  String? _boundTherapistId;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _usersStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _unackStream;
 
   @override
   Widget build(BuildContext context) {
@@ -30,15 +35,28 @@ class _PatientsTabState extends State<PatientsTab> {
       );
     }
 
-    final usersQuery = FirebaseFirestore.instance
-        .collection('users')
-        .where('role', isEqualTo: 'patient')
-        .where('therapistId', isEqualTo: therapistId)
-        .snapshots();
+    if (_boundTherapistId != therapistId) {
+      _boundTherapistId = therapistId;
+      final db = FirebaseFirestore.instance;
+      _usersStream = db
+          .collection('users')
+          .where('role', isEqualTo: 'patient')
+          .where('therapistId', isEqualTo: therapistId)
+          .snapshots();
+      // Unacknowledged alerts for this therapist's patients: an unacknowledged
+      // C-SSRS HIGH keeps the patient at the top of the list.
+      _unackStream = db
+          .collection('crisis_events')
+          .where('therapistId', isEqualTo: therapistId)
+          .where('acknowledged', isEqualTo: false)
+          .snapshots();
+    }
 
     return _PatientShell(
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: usersQuery,
+        stream: _unackStream,
+        builder: (context, unackSnap) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _usersStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const _CenteredInfo(
@@ -50,7 +68,13 @@ class _PatientsTabState extends State<PatientsTab> {
           }
 
           final docs = snapshot.data?.docs ?? const [];
-          final patients = _dedupeAndSortPatients(docs);
+          final unackTypes = <String, List<String>>{};
+          for (final d in unackSnap.data?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[]) {
+            final pid = d.data()['patientId'];
+            final type = d.data()['eventType'];
+            if (pid is String && type is String) (unackTypes[pid] ??= []).add(type);
+          }
+          final patients = _dedupeAndSortPatients(docs, unackTypes);
 
           final filtered = _search.trim().isEmpty
               ? patients
@@ -81,21 +105,21 @@ class _PatientsTabState extends State<PatientsTab> {
                       _search = value;
                     });
                   },
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.ink),
                   decoration: InputDecoration(
                     hintText: 'Search by patient name',
-                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.46)),
-                    prefixIcon: Icon(Icons.search_rounded, color: Colors.white.withValues(alpha: 0.62)),
+                    hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.46)),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.ink.withValues(alpha: 0.62)),
                     filled: true,
                     fillColor: AppTheme.cardDark,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                      borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.1)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppTheme.primaryIndigo),
+                      borderSide: BorderSide(color: AppTheme.primaryIndigo),
                     ),
                   ),
                 ),
@@ -143,6 +167,7 @@ class _PatientsTabState extends State<PatientsTab> {
           );
         },
       ),
+      ),
     );
   }
 
@@ -165,17 +190,17 @@ class _PatientsTabState extends State<PatientsTab> {
         decoration: BoxDecoration(
           color: AppTheme.cardDark,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.groups_rounded, color: Colors.white54, size: 46),
+            Icon(Icons.groups_rounded, color: AppColors.ink54, size: 46),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'No patients assigned yet',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.ink,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
@@ -186,7 +211,7 @@ class _PatientsTabState extends State<PatientsTab> {
               '("Your invite code") and share it with your patient.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
+                color: AppColors.ink.withValues(alpha: 0.6),
                 fontSize: 13,
               ),
             ),
@@ -234,15 +259,15 @@ class _PatientsHeader extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppTheme.cardDark,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
         ),
         child: Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
                 'My Patients',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
                 ),
@@ -253,12 +278,12 @@ class _PatientsHeader extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppTheme.backgroundDark,
                 borderRadius: BorderRadius.circular(100),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
               ),
               child: Text(
                 '$totalCount Patients',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: AppColors.ink,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                 ),
@@ -285,10 +310,16 @@ class _PatientCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final risk = patient.riskPercent;
-    final riskColor = risk == null ? Colors.white54 : _riskColor(risk);
+    final level = patient.clinicalLevel;
+    final levelColor = patient.hasInstrumentData ? ClinicalStatusCard.colorFor(level) : AppColors.ink54;
+    final riskColor = patient.hasInstrumentData ? levelColor : (risk == null ? AppColors.ink54 : _riskColor(risk));
+    // Check-in heuristic: early-warning only, never labelled as "risk".
     final riskText = risk == null
-        ? 'Risk: no check-in data yet'
-        : 'Risk: ${risk.toStringAsFixed(0)}% ${_riskLabel(risk)} ${_riskEmoji(risk)}';
+        ? 'Check-in indicator: —'
+        : 'Check-in indicator: ${risk.toStringAsFixed(0)}/100 (${_riskLabel(risk)})';
+    final levelText = patient.hasInstrumentData
+        ? 'Clinical status: ${level.label.toUpperCase()}'
+        : 'Clinical status: no validated assessment yet';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -296,7 +327,7 @@ class _PatientCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,26 +354,34 @@ class _PatientCard extends StatelessWidget {
                   children: [
                     Text(
                       patient.name,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.ink,
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
+                      levelText,
+                      style: TextStyle(
+                        color: levelColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
                       riskText,
                       style: TextStyle(
-                        color: riskColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                        color: AppColors.ink.withValues(alpha: 0.76),
+                        fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Emotion: ${patient.latestMood}',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.76),
+                        color: AppColors.ink.withValues(alpha: 0.76),
                         fontSize: 12,
                       ),
                     ),
@@ -350,7 +389,7 @@ class _PatientCard extends StatelessWidget {
                     Text(
                       'Last check-in: ${patient.lastCheckInRelative}',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.65),
+                        color: AppColors.ink.withValues(alpha: 0.65),
                         fontSize: 12,
                       ),
                     ),
@@ -364,7 +403,7 @@ class _PatientCard extends StatelessWidget {
                               '${patient.heartRateStale ? ' (watch not syncing)' : ''}',
                       style: TextStyle(
                         color: patient.heartRate == null || patient.heartRateStale
-                            ? Colors.white.withValues(alpha: 0.5)
+                            ? AppColors.ink.withValues(alpha: 0.5)
                             : patient.heartRateOutOfRange
                                 ? AppTheme.riskRed
                                 : AppTheme.safeGreen,
@@ -376,7 +415,7 @@ class _PatientCard extends StatelessWidget {
                     Text(
                       'Streak: 🔥 ${patient.streak} days',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
+                        color: AppColors.ink.withValues(alpha: 0.8),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -412,7 +451,7 @@ class _ActionBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const color = AppTheme.primaryIndigo;
+    final color = AppTheme.primaryIndigo;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -467,15 +506,15 @@ class _CenteredInfo extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isLoading)
-              const CircularProgressIndicator(color: AppTheme.primaryIndigo)
+              CircularProgressIndicator(color: AppTheme.primaryIndigo)
             else
               Icon(icon, color: color, size: 34),
             const SizedBox(height: 12),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.ink,
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
               ),
@@ -485,7 +524,7 @@ class _CenteredInfo extends StatelessWidget {
               subtitle,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.62),
+                color: AppColors.ink.withValues(alpha: 0.62),
                 fontSize: 12,
               ),
             ),
@@ -508,6 +547,8 @@ class _PatientUI {
   final String heartRateRelative;
   final bool heartRateStale;
   final bool heartRateOutOfRange;
+  final ClinicalLevel clinicalLevel;
+  final bool hasInstrumentData;
 
   const _PatientUI({
     required this.id,
@@ -521,6 +562,8 @@ class _PatientUI {
     this.heartRateRelative = '',
     this.heartRateStale = false,
     this.heartRateOutOfRange = false,
+    this.clinicalLevel = ClinicalLevel.none,
+    this.hasInstrumentData = false,
   });
 }
 
@@ -529,7 +572,15 @@ const double _defaultHrHigh = 120;
 const double _defaultHrLow = 45;
 const Duration _vitalsStaleAfter = Duration(hours: 2);
 
-List<_PatientUI> _dedupeAndSortPatients(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+int? _snapshotTotal(dynamic snap) {
+  if (snap is Map && snap['total'] is num) return (snap['total'] as num).round();
+  return null;
+}
+
+List<_PatientUI> _dedupeAndSortPatients(
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, [
+  Map<String, List<String>> unacknowledgedTypes = const {},
+]) {
   final map = <String, _PatientUI>{};
 
   for (final doc in docs) {
@@ -549,6 +600,24 @@ List<_PatientUI> _dedupeAndSortPatients(List<QueryDocumentSnapshot<Map<String, d
     final hrLow = (thresholds is Map ? _toDouble(thresholds['heartRateLow']) : null) ?? _defaultHrLow;
     final hrStale = hrAt == null || DateTime.now().difference(hrAt) > _vitalsStaleAfter;
 
+    // Clinical level from validated-instrument snapshots + unacknowledged
+    // C-SSRS / PHQ-9 alerts (same mapping as the Clinical status card).
+    final phq9Total = _snapshotTotal(data['latestPhq9']);
+    final gad7Total = _snapshotTotal(data['latestGad7']);
+    final cssrsSnap = data['latestCssrs'];
+    final cssrsRisk = cssrsSnap is Map ? parseCssrsRisk(cssrsSnap['risk']) : null;
+    final unack = unacknowledgedTypes[id] ?? const <String>[];
+    final level = ClinicalScoring.rosterLevel(
+      phq9Total: phq9Total,
+      gad7Total: gad7Total,
+      cssrsRisk: cssrsRisk,
+      unacknowledgedEventTypes: unack,
+    );
+    final hasInstrumentData = phq9Total != null ||
+        gad7Total != null ||
+        cssrsRisk != null ||
+        unack.any((t) => t == 'cssrs_high' || t == 'cssrs_moderate' || t == 'phq9_severe');
+
     final item = _PatientUI(
       id: id,
       name: name,
@@ -561,6 +630,8 @@ List<_PatientUI> _dedupeAndSortPatients(List<QueryDocumentSnapshot<Map<String, d
       heartRateRelative: hrAt == null ? '' : _relativeTime(hrAt),
       heartRateStale: hrValue != null && hrStale,
       heartRateOutOfRange: hrValue != null && !hrStale && (hrValue > hrHigh || hrValue < hrLow),
+      clinicalLevel: level,
+      hasInstrumentData: hasInstrumentData,
     );
 
     final old = map[id];
@@ -571,11 +642,14 @@ List<_PatientUI> _dedupeAndSortPatients(List<QueryDocumentSnapshot<Map<String, d
 
   final items = map.values.toList()
     ..sort((a, b) {
-      // A live out-of-range heart rate is the most urgent signal: list those first.
+      // Clinical level (validated instruments) first: critical > high > ... > none.
+      final levelCmp = b.clinicalLevel.rank.compareTo(a.clinicalLevel.rank);
+      if (levelCmp != 0) return levelCmp;
+      // Then a live out-of-range heart rate (early-warning signal).
       if (a.heartRateOutOfRange != b.heartRateOutOfRange) {
         return a.heartRateOutOfRange ? -1 : 1;
       }
-      // Then highest risk; patients without a score sort after scored ones.
+      // Then highest check-in indicator; patients without one sort after scored ones.
       final riskCmp = (b.riskPercent ?? -1).compareTo(a.riskPercent ?? -1);
       if (riskCmp != 0) return riskCmp;
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -611,18 +685,12 @@ double? _riskPercent(Map<String, dynamic> data) {
   return asNum.clamp(0.0, 100.0);
 }
 
+/// Check-in self-report heuristic band (early warning; not a clinical risk level).
 String _riskLabel(double risk) {
-  if (risk >= 75) return 'Critical';
-  if (risk >= 50) return 'High';
-  if (risk >= 25) return 'Moderate';
-  return 'Low';
-}
-
-String _riskEmoji(double risk) {
-  if (risk >= 75) return '😟';
-  if (risk >= 50) return '😣';
-  if (risk >= 25) return '😐';
-  return '🙂';
+  if (risk >= 75) return 'very high strain';
+  if (risk >= 50) return 'high strain';
+  if (risk >= 25) return 'some strain';
+  return 'little strain';
 }
 
 Color _riskColor(double risk) {

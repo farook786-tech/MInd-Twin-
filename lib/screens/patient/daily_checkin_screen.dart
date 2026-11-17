@@ -175,13 +175,13 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.link_off, color: AppTheme.warningAmber),
+          Icon(Icons.link_off, color: AppTheme.warningAmber),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Text(
               'You are not linked to a therapist. Your check-ins are saved, but no clinician '
               'will see them or be alerted.',
-              style: TextStyle(color: Colors.white, fontSize: 12),
+              style: TextStyle(color: AppColors.ink, fontSize: 12),
             ),
           ),
           TextButton(onPressed: _linkTherapist, child: const Text('Link')),
@@ -1045,7 +1045,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         Text(
           'Step $current of 5',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.75),
+            color: AppColors.ink.withValues(alpha: 0.75),
             fontSize: 12,
             fontWeight: FontWeight.w500,
           ),
@@ -1060,7 +1060,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
               child: LinearProgressIndicator(
                 minHeight: 8,
                 value: value,
-                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                backgroundColor: AppColors.ink.withValues(alpha: 0.08),
                 color: AppTheme.primaryIndigo.withValues(alpha: 0.85),
               ),
             );
@@ -1095,7 +1095,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       ),
       child: Icon(
         smiling ? Icons.sentiment_very_satisfied_rounded : Icons.sentiment_satisfied_alt_rounded,
-        color: Colors.white,
+        color: AppColors.ink,
         size: size * 0.45,
       ),
     );
@@ -1108,8 +1108,8 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: Colors.white.withValues(alpha: 0.04),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+        color: AppColors.ink.withValues(alpha: 0.04),
+        border: Border.all(color: AppColors.ink.withValues(alpha: 0.09)),
       ),
       child: Row(
         children: [
@@ -1129,15 +1129,15 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
                   ],
                 ),
               ),
-              child: const Icon(Icons.favorite, size: 18, color: Colors.white),
+              child: Icon(Icons.favorite, size: 18, color: AppColors.ink),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.ink,
                 fontSize: 13,
                 height: 1.35,
                 fontWeight: FontWeight.w500,
@@ -1179,7 +1179,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
               border: Border.all(
                 color: selected
                     ? AppTheme.primaryIndigo.withValues(alpha: 0.88)
-                    : Colors.white.withValues(alpha: 0.08),
+                    : AppColors.ink.withValues(alpha: 0.08),
                 width: selected ? 1.6 : 1,
               ),
               boxShadow: selected
@@ -1200,7 +1200,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
                   child: Text(
                     option.title,
                     style: TextStyle(
-                      color: selected ? Colors.white : Colors.white.withValues(alpha: 0.72),
+                      color: selected ? AppColors.ink : AppColors.ink.withValues(alpha: 0.72),
                       fontSize: compact ? 16 : 15,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1250,7 +1250,7 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         style: ElevatedButton.styleFrom(
           minimumSize: const Size(double.infinity, 56),
           backgroundColor: AppTheme.primaryIndigo,
-          disabledBackgroundColor: Colors.white.withValues(alpha: 0.2),
+          disabledBackgroundColor: AppColors.ink.withValues(alpha: 0.2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         child: _isSaving
@@ -1278,23 +1278,23 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
           Text(
             '${_timeBasedGreeting()}, $_patientName',
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w700,
-              color: Colors.white,
+              color: AppColors.ink,
             ),
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             'How are you feeling today?',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.ink),
           ),
           const SizedBox(height: 10),
           Text(
             'Tap to tell me',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.66),
+              color: AppColors.ink.withValues(alpha: 0.66),
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -1310,9 +1310,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'How are you feeling?',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.ink),
         ),
         const SizedBox(height: 16),
         _buildChoiceGrid(
@@ -1337,9 +1337,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'How was your sleep?',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.ink),
         ),
         const SizedBox(height: 16),
         ..._sleepOptions.map(
@@ -1369,9 +1369,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'How is your energy?',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.ink),
         ),
         const SizedBox(height: 16),
         ..._energyOptions.map(
@@ -1401,14 +1401,14 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'What is weighing on you?',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.ink),
         ),
         const SizedBox(height: 8),
         Text(
           'Tap all that apply',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.64), fontSize: 13),
+          style: TextStyle(color: AppColors.ink.withValues(alpha: 0.64), fontSize: 13),
         ),
         const SizedBox(height: 14),
         ..._worryOptions.map(
@@ -1445,14 +1445,14 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'One good thing today',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.ink),
         ),
         const SizedBox(height: 8),
         Text(
           'Tap what happened',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.64), fontSize: 13),
+          style: TextStyle(color: AppColors.ink.withValues(alpha: 0.64), fontSize: 13),
         ),
         const SizedBox(height: 14),
         ..._positiveOptions.map(
@@ -1481,19 +1481,19 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         TextField(
           controller: _optionalGoodThingController,
           maxLines: 2,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.ink),
           decoration: InputDecoration(
             hintText: 'Want to add more? (optional)',
-            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
+            hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.45)),
             filled: true,
             fillColor: AppTheme.cardDark.withValues(alpha: 0.75),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+              borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.1)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+              borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.1)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
@@ -1531,16 +1531,16 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.white.withValues(alpha: 0.06),
+                  AppColors.ink.withValues(alpha: 0.06),
                   AppTheme.primaryIndigo.withValues(alpha: 0.08),
                 ],
               ),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              border: Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
             ),
             child: Text(
               _summaryMessage(),
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.ink,
                 fontSize: 17,
                 height: 1.45,
                 fontWeight: FontWeight.w500,
@@ -1549,8 +1549,8 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            'Risk score ${_formatRisk(_riskScoreFromInputs())}',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12),
+            'Check-in wellbeing indicator ${_formatRisk(_riskScoreFromInputs())} (self-report, not a diagnosis)',
+            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.45), fontSize: 12),
           ),
           const SizedBox(height: 26),
           _buildPrimaryButton(label: 'See what helps →'),
@@ -1565,9 +1565,9 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Suggested right now',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.ink),
         ),
         const SizedBox(height: 14),
         ...activities.map(
@@ -1579,12 +1579,12 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
               children: [
                 Text(
                   '${activity.emoji} ${activity.title}',
-                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                  style: TextStyle(color: AppColors.ink, fontSize: 18, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   activity.subtitle,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.66), fontSize: 13),
+                  style: TextStyle(color: AppColors.ink.withValues(alpha: 0.66), fontSize: 13),
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -1625,19 +1625,19 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
                 AppTheme.accentCyan.withValues(alpha: 0.12),
               ],
             ),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            border: Border.all(color: AppColors.ink.withValues(alpha: 0.12)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 "Today's Goal 🎯",
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.95), fontSize: 19, fontWeight: FontWeight.w700),
+                style: TextStyle(color: AppColors.ink.withValues(alpha: 0.95), fontSize: 19, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 10),
               Text(
                 goal.text,
-                style: const TextStyle(color: Colors.white, fontSize: 20, height: 1.35, fontWeight: FontWeight.w600),
+                style: TextStyle(color: AppColors.ink, fontSize: 20, height: 1.35, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -1655,25 +1655,25 @@ class _DailyCheckInScreenState extends State<DailyCheckInScreen>
         const SizedBox(height: 24),
         _buildAvatar(size: 160, smiling: true),
         const SizedBox(height: 20),
-        const Text(
+        Text(
           'Check-in complete 💙',
           textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w700),
+          style: TextStyle(color: AppColors.ink, fontSize: 30, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 12),
         Text(
           '🔥 Day $_streakDays streak!',
-          style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w600),
+          style: TextStyle(color: AppColors.ink, fontSize: 19, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Text(
           'Your twin has been updated',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 15),
+          style: TextStyle(color: AppColors.ink.withValues(alpha: 0.72), fontSize: 15),
         ),
         const SizedBox(height: 24),
         Text(
-          'Latest risk ${_formatRisk(_latestRiskScore)}',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.46), fontSize: 12),
+          'Latest check-in wellbeing indicator ${_formatRisk(_latestRiskScore)}',
+          style: TextStyle(color: AppColors.ink.withValues(alpha: 0.46), fontSize: 12),
         ),
         const SizedBox(height: 24),
         SizedBox(

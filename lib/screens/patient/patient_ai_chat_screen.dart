@@ -8,6 +8,8 @@ import '../../services/gemini_service.dart';
 import '../../services/ml_sentiment_service.dart';
 import '../../services/patient_crisis_reporter.dart';
 import '../../services/patient_memory_service.dart';
+import '../../services/sos_reporter.dart';
+import '../../widgets/emergency_help_sheet.dart';
 import 'safety_resources_screen.dart';
 
 class PatientAIChatScreen extends StatefulWidget {
@@ -79,8 +81,11 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
             'you", "That sounds tough"). Listen and validate feelings, share '
             'coping strategies and wellness tips in a friendly way, encourage '
             'healthy habits and celebrate small wins. Never diagnose or replace '
-            'professional help; never be preachy. If crisis signs appear, '
-            'immediately suggest the crisis helpline (988) with care. Keep '
+            'professional help; never recommend, start, stop or change any '
+            'medication or dose (refer to their doctor); never be preachy. If crisis signs appear, '
+            'gently and immediately suggest calling Tele-MANAS on 14416 (the free 24x7 Indian '
+            'mental health helpline) or 112 if they are in immediate danger, and their '
+            'therapist. Keep '
             'responses conversational, warm and under 100 words.'
             '${await PatientMemoryService().buildContext(patientId: widget.patientId, currentMessage: messageText)}',
         userPrompt: messageText,
@@ -238,7 +243,7 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
           content: const Text(
             "I'm really concerned about you right now. You're not alone. "
             'Would you like me to connect you with your therapist immediately?\n\n'
-            'National Crisis Helpline: iCall 9152987821',
+            'Tele-MANAS (free, 24x7): 14416 · Emergency: 112',
           ),
           actions: [
             TextButton(
@@ -256,29 +261,15 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
       if (!mounted) return;
 
       if (action == true) {
-        final status = await PatientCrisisReporter.report(
-          eventType: 'sos',
-          severity: 'critical',
+        final outcome = await SosReporter.sendFromPhone(
+          source: 'patient_ai_chat',
           title: 'Patient requested immediate contact',
           message: 'During a critical AI-chat conversation the patient asked to be connected '
               'to their therapist immediately.',
-          source: 'patient_ai_chat',
         );
         if (!mounted) return;
-        final sent = status == CrisisReportStatus.delivered;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(PatientCrisisReporter.describe(status)),
-            backgroundColor: sent ? AppTheme.riskRed : AppTheme.warningAmber,
-            duration: const Duration(seconds: 8),
-          ),
-        );
-        if (!sent) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SafetyResourcesScreen()),
-          );
-        }
+        // Offline / slow / failed: offers trusted-contact SMS and Tele-MANAS.
+        await showEmergencyHelpSheet(context, status: outcome.message, delivered: outcome.delivered);
       } else {
         Navigator.push(
           context,
@@ -359,12 +350,12 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
               color: AppTheme.riskRed.withValues(alpha: 0.2),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline, color: AppTheme.riskRed),
+                  Icon(Icons.error_outline, color: AppTheme.riskRed),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       _errorMessage!,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: AppColors.ink),
                     ),
                   ),
                 ],
@@ -383,7 +374,7 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                         Text(
                           'Start a conversation',
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: Colors.white,
+                                color: AppColors.ink,
                               ),
                         ),
                         const SizedBox(height: 8),
@@ -392,7 +383,7 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                           child: Text(
                             'Meet Ally, your supportive friend here to listen, understand, and help you feel better. Start chatting whenever you need someone to talk to.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                            style: TextStyle(color: AppColors.ink.withValues(alpha: 0.7)),
                           ),
                         ),
                       ],
@@ -428,7 +419,7 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                               margin: const EdgeInsets.symmetric(vertical: 8),
                               decoration: BoxDecoration(
                                 color: isUser ? Colors.blue[600] : AppTheme.cardDark,
-                                border: isUser ? null : Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                                border: isUser ? null : Border.all(color: AppColors.ink.withValues(alpha: 0.1)),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Column(
@@ -438,8 +429,8 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                                 children: [
                                   Text(
                                     message.message,
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
+                                      color: AppColors.ink,
                                       fontSize: 15,
                                     ),
                                   ),
@@ -449,8 +440,8 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: isUser
-                                          ? Colors.white70
-                                          : Colors.white54,
+                                          ? AppColors.ink70
+                                          : AppColors.ink54,
                                     ),
                                   ),
                                 ],
@@ -458,11 +449,11 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                             ),
                           ),
                           if (isUser)
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.only(left: 8.0),
                               child: CircleAvatar(
                                 backgroundColor: AppTheme.primaryIndigo,
-                                child: Icon(Icons.person, color: Colors.white),
+                                child: Icon(Icons.person, color: AppColors.ink),
                               ),
                             ),
                         ],
@@ -488,7 +479,7 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Text('AI is thinking...', style: TextStyle(color: Colors.white70)),
+                    Text('AI is thinking...', style: TextStyle(color: AppColors.ink70)),
                   ],
                 ),
               ),
@@ -504,7 +495,7 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
             decoration: BoxDecoration(
               color: AppTheme.cardDark,
               border: Border(
-                top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                top: BorderSide(color: AppColors.ink.withValues(alpha: 0.1)),
               ),
             ),
             child: Row(
@@ -512,23 +503,23 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                 Expanded(
                   child: TextField(
                     controller: _messageController,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: AppColors.ink),
                     decoration: InputDecoration(
                       hintText: 'Type your message...',
-                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                      hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.5)),
                       fillColor: AppTheme.backgroundDark,
                       filled: true,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.2)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.2)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
-                        borderSide: const BorderSide(color: AppTheme.primaryIndigo, width: 1.5),
+                        borderSide: BorderSide(color: AppTheme.primaryIndigo, width: 1.5),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -536,7 +527,7 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                       ),
                       suffixIcon: _messageController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white70),
+                              icon: Icon(Icons.close, color: AppColors.ink70),
                               onPressed: () {
                                 _messageController.clear();
                                 setState(() {});
@@ -559,7 +550,7 @@ class _PatientAIChatScreenState extends State<PatientAIChatScreen> {
                   disabledElevation: 0,
                   child: Icon(
                     Icons.send,
-                    color: _isLoading ? Colors.grey : Colors.white,
+                    color: _isLoading ? Colors.grey : AppColors.ink,
                   ),
                 ),
               ],

@@ -150,10 +150,10 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Connect to MindTwin Backend',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.ink,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -164,7 +164,7 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
                         ? 'Web browsers cannot auto-detect the backend. Please enter your backend IP/URL manually.'
                         : 'Choose how you want to connect to your backend server.',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: AppColors.ink.withValues(alpha: 0.7),
                       fontSize: 14,
                     ),
                   ),
@@ -175,10 +175,10 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
 
             // Auto-detect button (skip on web)
             if (!kIsWeb) ...[
-              const Text(
+              Text(
                 'Option 1: Auto-Detect (Recommended)',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -190,13 +190,13 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isDetecting ? null : _autoDetect,
                   icon: _isDetecting
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
+                              AppColors.ink,
                             ),
                           ),
                         )
@@ -211,19 +211,19 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
                 ),
               ),
               const SizedBox(height: 32),
-              const Text(
+              Text(
                 'Option 2: Manual Entry',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ] else
-              const Text(
+              Text(
                 'Enter Backend URL',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.ink,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -233,26 +233,26 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
             // URL input field
             TextField(
               controller: _urlController,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: AppColors.ink),
               decoration: InputDecoration(
                 hintText: 'http://192.168.1.100:5000',
-                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                hintStyle: TextStyle(color: AppColors.ink.withValues(alpha: 0.4)),
                 labelText: 'Backend URL',
-                labelStyle: const TextStyle(color: Colors.white70),
-                prefixIcon: const Icon(Icons.link, color: Colors.white70),
+                labelStyle: TextStyle(color: AppColors.ink70),
+                prefixIcon: Icon(Icons.link, color: AppColors.ink70),
                 filled: true,
                 fillColor: AppTheme.cardDark,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                  borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.2)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                  borderSide: BorderSide(color: AppColors.ink.withValues(alpha: 0.2)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.white70),
+                  borderSide: BorderSide(color: AppColors.ink70),
                 ),
               ),
             ),
@@ -289,7 +289,7 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
                     '• Localhost: http://localhost:5000\n'
                     '• Cloud URL: https://api.mindtwin.app',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: AppColors.ink.withValues(alpha: 0.7),
                       fontSize: 12,
                     ),
                   ),
@@ -333,13 +333,13 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
                     ? null
                     : _testConnection,
                 icon: _isTestingConnection
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
+                            AppColors.ink,
                           ),
                         ),
                       )

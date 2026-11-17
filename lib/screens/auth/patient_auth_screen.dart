@@ -159,7 +159,7 @@ class _PatientAuthScreenState extends State<PatientAuthScreen> {
                     child: Text(
                       'Your therapist shares this code with you. It links your account so they '
                       'can see your check-ins and be alerted if you need help.',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                      style: TextStyle(color: AppColors.ink.withValues(alpha: 0.6), fontSize: 12),
                     ),
                   ),
                 ],
@@ -173,7 +173,7 @@ class _PatientAuthScreenState extends State<PatientAuthScreen> {
                           builder: (_) => PasswordRecoveryScreen(initialEmail: _email.text.trim()),
                         ),
                       ),
-                      child: const Text('Forgot password?', style: TextStyle(color: AppTheme.primaryIndigo)),
+                      child: Text('Forgot password?', style: TextStyle(color: AppTheme.primaryIndigo)),
                     ),
                   ),
                 const SizedBox(height: 8),

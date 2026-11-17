@@ -70,26 +70,26 @@ class _TherapistPendingScreenState extends State<TherapistPendingScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.hourglass_top_rounded, size: 72, color: AppTheme.warningAmber),
+                Icon(Icons.hourglass_top_rounded, size: 72, color: AppTheme.warningAmber),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Your therapist account is awaiting approval',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: AppColors.ink, fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   'A clinic administrator must verify your credentials before you can see '
                   'patients or receive alerts.${email.isNotEmpty ? '\n\nSigned in as $email' : ''}',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+                  style: TextStyle(color: AppColors.ink.withValues(alpha: 0.75)),
                 ),
                 const SizedBox(height: 24),
                 if (_message != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 16),
                     child: Text(_message!,
-                        textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.warningAmber)),
+                        textAlign: TextAlign.center, style: TextStyle(color: AppTheme.warningAmber)),
                   ),
                 SizedBox(
                   width: double.infinity,

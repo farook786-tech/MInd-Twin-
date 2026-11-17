@@ -169,7 +169,7 @@ class _TherapistAuthScreenState extends State<TherapistAuthScreen> {
                           builder: (_) => PasswordRecoveryScreen(initialEmail: _email.text.trim()),
                         ),
                       ),
-                      child: const Text('Forgot password?', style: TextStyle(color: AppTheme.primaryIndigo)),
+                      child: Text('Forgot password?', style: TextStyle(color: AppTheme.primaryIndigo)),
                     ),
                   ),
                 const SizedBox(height: 8),

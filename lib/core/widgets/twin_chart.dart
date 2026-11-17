@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import 'app_card.dart';
 
+import '../theme/app_theme.dart';
 /// A single day of the patient's twin data.
 class TwinChartPoint {
   final DateTime timestamp;
@@ -41,10 +42,10 @@ class TwinTrendChart extends StatelessWidget {
     this.showLegend = true,
   });
 
-  static const Color moodColor = AppColors.primaryCyan; // #00F0FF
-  static const Color sleepColor = AppColors.primaryTeal; // #00E676
-  static const Color energyColor = AppColors.primaryViolet; // #8A2BE2
-  static const Color riskColor = AppColors.healthWarning; // #FFB300
+  static Color get moodColor => AppColors.primaryCyan; // #00F0FF
+  static Color get sleepColor => AppColors.primaryTeal; // #00E676
+  static Color get energyColor => AppColors.primaryViolet; // #8A2BE2
+  static Color get riskColor => AppColors.healthWarning; // #FFB300
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +81,7 @@ class TwinTrendChart extends StatelessWidget {
                 touchTooltipData: LineTouchTooltipData(
                   tooltipBgColor: Colors.black87,
                   tooltipRoundedRadius: 8,
-                  tooltipBorder: const BorderSide(
+                  tooltipBorder: BorderSide(
                     color: AppColors.primaryCyan,
                     width: 1,
                   ),
@@ -99,13 +100,13 @@ class TwinTrendChart extends StatelessWidget {
                 horizontalInterval: 2,
                 drawVerticalLine: false,
                 getDrawingHorizontalLine: (_) => FlLine(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: AppColors.ink.withValues(alpha: 0.1),
                   strokeWidth: 1,
                 ),
               ),
               borderData: FlBorderData(
                 show: true,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                border: Border.all(color: AppColors.ink.withValues(alpha: 0.12)),
               ),
               titlesData: FlTitlesData(
                 topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -118,7 +119,7 @@ class TwinTrendChart extends StatelessWidget {
                     getTitlesWidget: (value, _) => Text(
                       value.toInt().toString(),
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.65),
+                        color: AppColors.ink.withValues(alpha: 0.65),
                         fontSize: 10,
                       ),
                     ),
@@ -136,7 +137,7 @@ class TwinTrendChart extends StatelessWidget {
                       return Text(
                         DateFormat('EEE').format(sorted[index].timestamp),
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.68),
+                          color: AppColors.ink.withValues(alpha: 0.68),
                           fontSize: 10,
                         ),
                       );
@@ -155,7 +156,7 @@ class TwinTrendChart extends StatelessWidget {
         ),
         if (showLegend) ...[
           const SizedBox(height: 10),
-          const Wrap(
+          Wrap(
             spacing: 14,
             runSpacing: 6,
             children: [

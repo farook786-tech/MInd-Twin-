@@ -23,6 +23,8 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
         WearVitalsUploader.liveChannel = channel
+        // Watch SOS notification -> Flutter Safety Resources (WearSosHandler / SosLaunchBridge).
+        SosLaunchBridge.attach(flutterEngine, intent)
 
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -33,6 +35,15 @@ class MainActivity : FlutterFragmentActivity() {
                 "flushPendingWatchReadings" -> io.execute {
                     WearVitalsUploader.processPending(applicationContext)
                     runOnUiThread { result.success(true) }
+                }
+                // 5-minute Health Connect heart-rate windows from Dart: folded into the
+                // vitals_daily hr* summary owned by WearVitalsUploader (deduped by window start).
+                "recordHeartRateWindows" -> {
+                    val list = call.arguments as? List<*> ?: emptyList<Any?>()
+                    io.execute {
+                        WearVitalsUploader.recordExternalWindows(applicationContext, list)
+                        runOnUiThread { result.success(true) }
+                    }
                 }
                 // "Link your watch": the watch component ships inside the patient app's Play
                 // listing (same applicationId). If the paired watch doesn't have it yet, open
@@ -64,7 +75,14 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         WearVitalsUploader.liveChannel = null
+        SosLaunchBridge.detach()
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        SosLaunchBridge.onNewIntent(intent)
     }
 
     override fun onResume() {

@@ -3,14 +3,14 @@ import '../../core/theme/app_colors.dart';
 
 class AnimatedPulseAvatar extends StatefulWidget {
   final double radius;
-  final Color glowColor;
+  final Color? glowColor;
   final String statusText;
   final IconData icon;
 
   const AnimatedPulseAvatar({
     super.key,
     this.radius = 45.0,
-    this.glowColor = AppColors.primaryCyan,
+    this.glowColor,
     this.statusText = 'TWIN ACTIVE',
     this.icon = Icons.psychology_outlined,
   });
@@ -48,6 +48,7 @@ class _AnimatedPulseAvatarState extends State<AnimatedPulseAvatar>
     return AnimatedBuilder(
       animation: _pulseAnimation,
       builder: (context, child) {
+        final glow = widget.glowColor ?? AppColors.primaryCyan;
         return Stack(
           alignment: Alignment.center,
           children: [
@@ -57,10 +58,10 @@ class _AnimatedPulseAvatarState extends State<AnimatedPulseAvatar>
               height: widget.radius * 2 * _pulseAnimation.value,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: widget.glowColor.withOpacity(0.18 / _pulseAnimation.value),
+                color: glow.withValues(alpha: 0.18 / _pulseAnimation.value),
                 boxShadow: [
                   BoxShadow(
-                    color: widget.glowColor.withOpacity(0.35),
+                    color: glow.withValues(alpha: 0.35),
                     blurRadius: 28 * _pulseAnimation.value,
                     spreadRadius: 4 * _pulseAnimation.value,
                   ),
@@ -75,20 +76,20 @@ class _AnimatedPulseAvatarState extends State<AnimatedPulseAvatar>
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
                   colors: [
-                    widget.glowColor,
-                    widget.glowColor.withOpacity(0.6),
+                    glow,
+                    glow.withValues(alpha: 0.6),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.6),
+                  color: AppColors.ink.withValues(alpha: 0.6),
                   width: 2,
                 ),
               ),
               child: Icon(
                 widget.icon,
-                color: Colors.black,
+                color: AppColors.onPrimary,
                 size: widget.radius * 0.9,
               ),
             ),

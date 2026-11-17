@@ -149,7 +149,7 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                   child: Center(
                     child: Text(
                       name.isNotEmpty ? name[0].toUpperCase() : '?',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.primaryIndigo,
@@ -173,7 +173,7 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                                 fontWeight: unread > 0
                                     ? FontWeight.bold
                                     : FontWeight.w600,
-                                color: Colors.white,
+                                color: AppColors.ink,
                               ),
                             ),
                           ),
@@ -191,8 +191,8 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                               ),
                               child: Text(
                                 unread > 99 ? '99+' : unread.toString(),
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: AppColors.ink,
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -208,7 +208,7 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white
+                          color: AppColors.ink
                               .withValues(alpha: unread > 0 ? 0.85 : 0.6),
                         ),
                       ),
@@ -223,7 +223,7 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
                 const SizedBox(width: 8),
                 Icon(
                   Icons.chevron_right,
-                  color: Colors.white.withValues(alpha: 0.3),
+                  color: AppColors.ink.withValues(alpha: 0.3),
                 ),
               ],
             ),
@@ -237,7 +237,7 @@ class _MessageInboxScreenState extends State<MessageInboxScreen> {
   Widget _buildReceipt(ChatThread thread) {
     final read = thread.unreadForOther == 0;
     final color =
-        read ? AppTheme.safeGreen : Colors.white.withValues(alpha: 0.5);
+        read ? AppTheme.safeGreen : AppColors.ink.withValues(alpha: 0.5);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

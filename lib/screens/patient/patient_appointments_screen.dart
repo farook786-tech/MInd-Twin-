@@ -139,7 +139,7 @@ class _AppointmentJoinButtonState extends State<AppointmentJoinButton> {
           label: const Text('Join session'),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.safeGreen,
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.ink,
             padding: const EdgeInsets.symmetric(vertical: 12),
           ),
         ),
@@ -168,10 +168,10 @@ class _InfoLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: Colors.white70),
+        Icon(icon, size: 16, color: AppColors.ink70),
         const SizedBox(width: 6),
         Expanded(
-          child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          child: Text(text, style: TextStyle(color: AppColors.ink70, fontSize: 13)),
         ),
       ],
     );
@@ -260,15 +260,15 @@ class _ReasonDialogState extends State<_ReasonDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: AppTheme.cardDark,
-      title: Text(widget.title, style: const TextStyle(color: Colors.white)),
+      title: Text(widget.title, style: TextStyle(color: AppColors.ink)),
       content: TextField(
         controller: _controller,
         maxLines: 3,
         maxLength: 300,
-        style: const TextStyle(color: Colors.white),
+        style: TextStyle(color: AppColors.ink),
         decoration: InputDecoration(
           hintText: widget.hint,
-          hintStyle: const TextStyle(color: Colors.white38),
+          hintStyle: TextStyle(color: AppColors.ink38),
           errorText: _error,
         ),
       ),
@@ -280,7 +280,7 @@ class _ReasonDialogState extends State<_ReasonDialog> {
         ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: widget.destructive ? AppTheme.riskRed : AppTheme.primaryIndigo,
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.ink,
           ),
           onPressed: () {
             final text = _controller.text.trim();
@@ -343,11 +343,11 @@ class _PatientAppointmentsScreenState extends State<PatientAppointmentsScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppTheme.cardDark,
-          title: const Text('No therapist yet', style: TextStyle(color: Colors.white)),
-          content: const Text(
+          title: Text('No therapist yet', style: TextStyle(color: AppColors.ink)),
+          content: Text(
             'You need to be linked to a therapist before you can request a session. '
             'Ask your therapist for their invite code and join them from your profile.',
-            style: TextStyle(color: Colors.white70),
+            style: TextStyle(color: AppColors.ink70),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
@@ -396,8 +396,8 @@ class _PatientAppointmentsScreenState extends State<PatientAppointmentsScreen> {
       return Scaffold(
         backgroundColor: AppTheme.backgroundDark,
         appBar: AppBar(backgroundColor: AppTheme.cardDark, title: const Text('My Sessions')),
-        body: const Center(
-          child: Text('Please sign in to see your sessions.', style: TextStyle(color: Colors.white)),
+        body: Center(
+          child: Text('Please sign in to see your sessions.', style: TextStyle(color: AppColors.ink)),
         ),
       );
     }
@@ -465,10 +465,10 @@ class _PatientAppointmentsScreenState extends State<PatientAppointmentsScreen> {
         AppCard(
           color: AppTheme.warningAmber.withValues(alpha: 0.15),
           margin: const EdgeInsets.only(bottom: 16),
-          child: const Text(
+          child: Text(
             'You are not linked to a therapist yet. Join your therapist with their '
             'invite code (Profile) to request online sessions.',
-            style: TextStyle(color: Colors.white),
+            style: TextStyle(color: AppColors.ink),
           ),
         ),
       if (linked && therapistName.isNotEmpty)
@@ -476,13 +476,13 @@ class _PatientAppointmentsScreenState extends State<PatientAppointmentsScreen> {
           padding: const EdgeInsets.only(bottom: 8),
           child: Text(
             'Your therapist: $therapistName',
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
+            style: TextStyle(color: AppColors.ink70, fontSize: 13),
           ),
         ),
       Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Text(localTimeZoneHint(),
-            style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            style: TextStyle(color: AppColors.ink38, fontSize: 12)),
       ),
     ];
 
@@ -534,45 +534,45 @@ class _PatientAppointmentsScreenState extends State<PatientAppointmentsScreen> {
           Row(
             children: [
               Icon(a.isVirtual ? Icons.videocam : Icons.location_on,
-                  color: Colors.white70, size: 18),
+                  color: AppColors.ink70, size: 18),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   a.therapistName,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                  style: TextStyle(
+                      color: AppColors.ink, fontWeight: FontWeight.w700, fontSize: 15),
                 ),
               ),
               AppointmentStatusChip(status: a.status),
             ],
           ),
           const SizedBox(height: 8),
-          Text(whenLabel, style: const TextStyle(color: Colors.white, fontSize: 14)),
+          Text(whenLabel, style: TextStyle(color: AppColors.ink, fontSize: 14)),
           const SizedBox(height: 4),
           Text(
             '${a.durationMinutes} min • ${a.isVirtual ? 'Online' : 'In person'}'
             '${a.hasPendingWrites ? ' • syncing…' : ''}',
-            style: const TextStyle(color: Colors.white60, fontSize: 12),
+            style: TextStyle(color: AppColors.ink60, fontSize: 12),
           ),
           if (a.reason.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text('Reason: ${a.reason}', style: const TextStyle(color: Colors.white70)),
+            Text('Reason: ${a.reason}', style: TextStyle(color: AppColors.ink70)),
           ],
           if (a.notes.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(a.notes, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+            Text(a.notes, style: TextStyle(color: AppColors.ink60, fontSize: 13)),
           ],
           if (a.status == AppointmentStatus.cancelled && a.cancelledBy != null) ...[
             const SizedBox(height: 6),
             Text(
               a.cancelledBy == 'patient' ? 'Cancelled by you' : 'Cancelled by your therapist',
-              style: const TextStyle(color: Colors.white60, fontSize: 12),
+              style: TextStyle(color: AppColors.ink60, fontSize: 12),
             ),
           ],
           if (a.needsOutcome(DateTime.now())) ...[
             const SizedBox(height: 6),
-            const Text('Session time has passed.',
-                style: TextStyle(color: Colors.white60, fontSize: 12)),
+            Text('Session time has passed.',
+                style: TextStyle(color: AppColors.ink60, fontSize: 12)),
           ],
           if (a.isScheduled && a.isVirtual) ...[
             const SizedBox(height: 12),
@@ -591,7 +591,7 @@ class _PatientAppointmentsScreenState extends State<PatientAppointmentsScreen> {
                   : TextButton(
                       onPressed: () => _cancel(a),
                       child: Text(a.isRequested ? 'Withdraw request' : 'Cancel session',
-                          style: const TextStyle(color: AppTheme.riskRed)),
+                          style: TextStyle(color: AppTheme.riskRed)),
                     ),
             ),
           ],
@@ -613,7 +613,7 @@ class _ErrorState extends StatelessWidget {
         child: Text(
           'Could not load sessions.\n$message',
           textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.ink70),
         ),
       ),
     );
@@ -690,33 +690,33 @@ class _RequestSessionSheetState extends State<_RequestSessionSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Request a session',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+            Text('Request a session',
+                style: TextStyle(color: AppColors.ink, fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 16),
             TextField(
               controller: _reason,
               maxLines: 3,
               maxLength: 500,
               enabled: !_submitting,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
+              style: TextStyle(color: AppColors.ink),
+              decoration: InputDecoration(
                 labelText: 'What would you like to talk about?',
-                labelStyle: TextStyle(color: Colors.white70),
+                labelStyle: TextStyle(color: AppColors.ink70),
               ),
             ),
             const SizedBox(height: 8),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.schedule, color: Colors.white70),
-              title: const Text('Preferred time', style: TextStyle(color: Colors.white70)),
+              leading: Icon(Icons.schedule, color: AppColors.ink70),
+              title: Text('Preferred time', style: TextStyle(color: AppColors.ink70)),
               subtitle: Text(formatAppointmentTime(_proposedAt),
-                  style: const TextStyle(color: Colors.white)),
-              trailing: const Icon(Icons.edit, color: Colors.white54),
+                  style: TextStyle(color: AppColors.ink)),
+              trailing: Icon(Icons.edit, color: AppColors.ink54),
               onTap: _submitting ? null : _pickTime,
             ),
-            Text(localTimeZoneHint(), style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            Text(localTimeZoneHint(), style: TextStyle(color: AppColors.ink38, fontSize: 11)),
             const SizedBox(height: 12),
-            const Text('Duration', style: TextStyle(color: Colors.white70)),
+            Text('Duration', style: TextStyle(color: AppColors.ink70)),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -734,13 +734,13 @@ class _RequestSessionSheetState extends State<_RequestSessionSheet> {
               value: _virtual,
               onChanged: _submitting ? null : (v) => setState(() => _virtual = v),
               title: Text(_virtual ? 'Online (video)' : 'In person',
-                  style: const TextStyle(color: Colors.white)),
-              subtitle: const Text('Online sessions get a secure video link',
-                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  style: TextStyle(color: AppColors.ink)),
+              subtitle: Text('Online sessions get a secure video link',
+                  style: TextStyle(color: AppColors.ink54, fontSize: 12)),
             ),
             if (_error != null) ...[
               const SizedBox(height: 8),
-              Text(_error!, style: const TextStyle(color: AppTheme.riskRed)),
+              Text(_error!, style: TextStyle(color: AppTheme.riskRed)),
             ],
             const SizedBox(height: 16),
             SizedBox(
@@ -749,7 +749,7 @@ class _RequestSessionSheetState extends State<_RequestSessionSheet> {
                 onPressed: _submitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryIndigo,
-                  foregroundColor: Colors.white,
+                  foregroundColor: AppColors.ink,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: _submitting

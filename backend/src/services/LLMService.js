@@ -666,7 +666,8 @@ Include: validation, grounding technique, safety resources.`;
     } catch (error) {
       console.error('Crisis response error:', error);
       return {
-        crisisMessage: 'Please reach out to a crisis helpline: National Suicide Prevention Lifeline: 988'
+        // India-first, matching lib/services/emergency_contacts.dart.
+        crisisMessage: 'Please reach out for help now: Tele-MANAS 14416 (or 1-800-891-4416), free and 24x7. In an emergency call 112.'
       };
     }
   }

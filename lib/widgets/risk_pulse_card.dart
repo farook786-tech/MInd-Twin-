@@ -122,7 +122,7 @@ class _RiskPulseCardState extends State<RiskPulseCard>
                             style: TextStyle(
                               fontSize: hasCheckIn ? 24 : 11,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: AppColors.ink,
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -130,7 +130,7 @@ class _RiskPulseCardState extends State<RiskPulseCard>
                             hasCheckIn ? 'RISK' : 'NO DATA',
                             style: TextStyle(
                               fontSize: 10,
-                              color: Colors.white.withValues(alpha: 0.7),
+                              color: AppColors.ink.withValues(alpha: 0.7),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -151,10 +151,10 @@ class _RiskPulseCardState extends State<RiskPulseCard>
                     children: [
                       Text(
                         widget.patient.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: AppColors.ink,
                         ),
                       ),
                       if (widget.patient.isDemo) ...[
@@ -168,7 +168,7 @@ class _RiskPulseCardState extends State<RiskPulseCard>
                             color: AppTheme.primaryIndigo.withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text(
+                          child: Text(
                             'DEMO',
                             style: TextStyle(
                               fontSize: 10,
@@ -182,7 +182,7 @@ class _RiskPulseCardState extends State<RiskPulseCard>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Risk Level: $riskLevel',
+                    'Check-in indicator: $riskLevel',
                     style: TextStyle(
                       fontSize: 14,
                       color: riskColor,
@@ -195,28 +195,28 @@ class _RiskPulseCardState extends State<RiskPulseCard>
                       Icon(
                         Icons.event_busy,
                         size: 16,
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppColors.ink.withValues(alpha: 0.5),
                       ),
                       const SizedBox(width: 4),
                       Text(
                         '${widget.patient.missedSessions} missed sessions',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: AppColors.ink.withValues(alpha: 0.5),
                         ),
                       ),
                       const SizedBox(width: 16),
                       Icon(
                         Icons.access_time,
                         size: 16,
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppColors.ink.withValues(alpha: 0.5),
                       ),
                       const SizedBox(width: 4),
                       Text(
                         _getLastCheckInText(),
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: AppColors.ink.withValues(alpha: 0.5),
                         ),
                       ),
                     ],
@@ -227,7 +227,7 @@ class _RiskPulseCardState extends State<RiskPulseCard>
             // Chevron
             Icon(
               Icons.chevron_right,
-              color: Colors.white.withValues(alpha: 0.3),
+              color: AppColors.ink.withValues(alpha: 0.3),
             ),
           ],
         ),
@@ -237,10 +237,10 @@ class _RiskPulseCardState extends State<RiskPulseCard>
 
   String _getRiskLevel(double score) {
     if (score < 0) return 'No Check-in';
-    if (score >= 0.75) return 'Critical';
-    if (score >= 0.50) return 'High Risk';
-    if (score >= 0.25) return 'Moderate';
-    return 'Low Risk';
+    if (score >= 0.75) return 'Very high strain';
+    if (score >= 0.50) return 'High strain';
+    if (score >= 0.25) return 'Some strain';
+    return 'Low strain';
   }
 
   Color _getRiskColor(double score) {

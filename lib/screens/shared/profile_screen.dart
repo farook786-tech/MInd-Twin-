@@ -1,7 +1,10 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../auth/join_therapist_dialog.dart';
 
@@ -21,6 +24,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isTherapist = false;
   String? _email;
 
+  /// users/{uid}.settings.aiSummaryConsent (patients only; default OFF).
+  /// Lets the therapist's pre-session brief include an AI-written narrative
+  /// built from de-identified data (backend/src/services/SessionBriefNarrative.js).
+  bool _aiSummaryConsent = false;
+  bool _consentLoaded = false;
+  bool _consentSaving = false;
+
   @override
   void initState() {
     super.initState();
@@ -28,6 +38,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _isTherapist = AuthService().currentRole == 'therapist';
     _nameController.text = user?['name']?.toString() ?? '';
     _email = user?['email']?.toString();
+    if (!_isTherapist) _loadConsent();
+  }
+
+  Future<void> _loadConsent() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 10));
+      final settings = snap.data()?['settings'];
+      if (!mounted) return;
+      setState(() {
+        _aiSummaryConsent = settings is Map && settings['aiSummaryConsent'] == true;
+        _consentLoaded = true;
+      });
+    } catch (e) {
+      debugPrint('[Profile] consent load failed: $e');
+      if (mounted) setState(() => _consentLoaded = true);
+    }
+  }
+
+  Future<void> _setConsent(bool value) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final previous = _aiSummaryConsent;
+    setState(() {
+      _aiSummaryConsent = value;
+      _consentSaving = true;
+    });
+    // Merge only this key inside `settings` (owner-writable per firestore.rules).
+    final write = FirebaseFirestore.instance.collection('users').doc(uid).set({
+      'settings': {
+        'aiSummaryConsent': value,
+        'aiSummaryConsentUpdatedAt': FieldValue.serverTimestamp(),
+      },
+    }, SetOptions(merge: true));
+    try {
+      await write.timeout(const Duration(seconds: 10));
+      _showSnack(value
+          ? 'AI-assisted summaries allowed. You can turn this off at any time.'
+          : 'AI-assisted summaries turned off.');
+    } on TimeoutException {
+      unawaited(write.catchError((Object e) => debugPrint('[Profile] queued consent write failed: $e')));
+      _showSnack('Saved on this phone; it will sync when you are back online.');
+    } catch (e) {
+      debugPrint('[Profile] consent write failed: $e');
+      if (mounted) setState(() => _aiSummaryConsent = previous);
+      _showSnack('Could not save this setting. Try again.');
+    } finally {
+      if (mounted) setState(() => _consentSaving = false);
+    }
   }
 
   @override
@@ -97,7 +161,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Chip(
               label: Text(
                 _isTherapist ? 'Therapist' : 'Patient',
-                style: const TextStyle(color: Colors.white70),
+                style: TextStyle(color: AppColors.ink70),
               ),
               backgroundColor: AppTheme.cardDark,
               side: BorderSide(color: AppColors.glassBorder),
@@ -120,9 +184,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.email_outlined, color: Colors.white54),
-              title: const Text('Email',
-                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+              leading: Icon(Icons.email_outlined, color: AppColors.ink54),
+              title: Text('Email',
+                  style: TextStyle(color: AppColors.ink54, fontSize: 13)),
               subtitle: Text(_email!, style: const TextStyle(fontSize: 15)),
             ),
           ],
@@ -149,6 +213,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
               label: const Text('Change therapist (invite code)'),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _aiSummaryConsent,
+              onChanged: (!_consentLoaded || _consentSaving) ? null : _setConsent,
+              title: const Text('Allow AI-assisted summaries for my therapist'),
+              subtitle: Text(
+                "Off by default. When on, your therapist's pre-session summary may include a short "
+                'AI-written paragraph. The AI service receives only your scores, check-in and '
+                'wearable summaries, alerts, dates as "days ago" and short journal excerpts with '
+                'contact details removed, never your name, email or phone number. '
+                'Your therapist always sees the full non-AI summary either way.',
+                style: TextStyle(fontSize: 12, color: AppColors.ink60),
               ),
             ),
           ],

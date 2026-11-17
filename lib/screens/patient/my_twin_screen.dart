@@ -8,6 +8,7 @@ import '../../core/widgets/twin_chart.dart';
 import '../../services/auth_service.dart';
 import '../../services/wearable_sync_service.dart';
 import '../../widgets/patient_vitals_panel.dart';
+import '../../widgets/twin_drift_card.dart';
 import 'daily_checkin_screen.dart';
 
 class MyTwinScreen extends StatefulWidget {
@@ -113,15 +114,15 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
 
   _RiskBand _riskBand(double score) {
     if (score <= 24) {
-      return const _RiskBand(label: 'Low Risk', color: AppTheme.safeGreen);
+      return _RiskBand(label: 'Little strain reported', color: AppTheme.safeGreen);
     }
     if (score <= 49) {
-      return const _RiskBand(label: 'Moderate', color: AppTheme.warningAmber);
+      return _RiskBand(label: 'Some strain reported', color: AppTheme.warningAmber);
     }
     if (score <= 74) {
-      return const _RiskBand(label: 'High Risk', color: Color(0xFFFF9800));
+      return const _RiskBand(label: 'High strain reported', color: Color(0xFFFF9800));
     }
-    return const _RiskBand(label: 'Critical', color: AppTheme.riskRed);
+    return _RiskBand(label: 'Very high strain reported', color: AppTheme.riskRed);
   }
 
   Widget _metricRow(String label, String value) {
@@ -133,14 +134,14 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.72),
+              color: AppColors.ink.withValues(alpha: 0.72),
               fontSize: 14,
             ),
           ),
           Text(
             value,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.ink,
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
@@ -176,10 +177,10 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '7-Day Mood, Sleep, Energy & Risk',
+          Text(
+            '7-Day Mood, Sleep, Energy & Check-in Indicator',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.ink,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -189,7 +190,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             Text(
               'Check in daily to see your trend 💙',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.72),
+                color: AppColors.ink.withValues(alpha: 0.72),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -211,38 +212,38 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: AppColors.ink.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                border: Border.all(color: AppColors.ink.withValues(alpha: 0.08)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     DateFormat('EEE, MMM d').format(sorted[selectedIndex].timestamp),
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: AppColors.ink,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 8),
                   _metricRow(
                     'Mood',
-                    sorted[selectedIndex].moodScore?.toStringAsFixed(0) ?? 'Unavailable',
+                    sorted[selectedIndex].moodScore?.toStringAsFixed(0) ?? '—',
                   ),
                   _metricRow(
                     'Sleep',
-                    sorted[selectedIndex].sleepScore?.toStringAsFixed(0) ?? 'Unavailable',
+                    sorted[selectedIndex].sleepScore?.toStringAsFixed(0) ?? '—',
                   ),
                   _metricRow(
                     'Energy',
-                    sorted[selectedIndex].energyScore?.toStringAsFixed(0) ?? 'Unavailable',
+                    sorted[selectedIndex].energyScore?.toStringAsFixed(0) ?? '—',
                   ),
                   _metricRow(
-                    'Risk',
+                    'Check-in wellbeing indicator',
                     sorted[selectedIndex].riskScore != null
-                        ? '${sorted[selectedIndex].riskScore!.toStringAsFixed(0)}%'
-                        : 'Unavailable',
+                        ? '${sorted[selectedIndex].riskScore!.toStringAsFixed(0)}/100'
+                        : '—',
                   ),
                 ],
               ),
@@ -255,13 +256,13 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
 
   Widget _buildRiskGauge(double? riskScore) {
     if (riskScore == null) {
-      return const Column(
+      return Column(
         children: [
-          Icon(Icons.analytics_outlined, color: Colors.white54, size: 44),
+          Icon(Icons.analytics_outlined, color: AppColors.ink54, size: 44),
           SizedBox(height: 8),
           Text(
-            'Risk score unavailable',
-            style: TextStyle(color: Colors.white70),
+            'Check-in wellbeing indicator: —',
+            style: TextStyle(color: AppColors.ink70),
           ),
         ],
       );
@@ -280,11 +281,11 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
         Column(
           children: [
             Text(
-              '${clamped.toStringAsFixed(0)}%',
-              style: const TextStyle(
+              '${clamped.toStringAsFixed(0)}/100',
+              style: TextStyle(
                 fontSize: 44,
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: AppColors.ink,
               ),
             ),
             Text(
@@ -391,6 +392,9 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
         children: [
           _buildChartCard(points),
           const SizedBox(height: 20),
+          // Recent days vs the patient's own usual pattern (gentle wording; no risk numbers).
+          TwinDriftCard(key: ValueKey<String>('drift-$patientId-$_refreshVersion'), patientId: patientId),
+          const SizedBox(height: 20),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             key: ValueKey<String>('latest-risk-$patientId-$_refreshVersion'),
             stream: _latestLog(patientId),
@@ -401,10 +405,10 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
               }
 
               if (snapshot.hasError && !snapshot.hasData) {
-                return const AppCard(
+                return AppCard(
                   child: Text(
-                    'Risk score unavailable right now.',
-                    style: TextStyle(color: Colors.white70),
+                    'Check-in wellbeing indicator: — (unavailable right now)',
+                    style: TextStyle(color: AppColors.ink70),
                   ),
                 );
               }
@@ -421,27 +425,27 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Latest Daily Check-in',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.ink,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 12),
-                _metricRow('Mood Score', latest.moodScore?.toStringAsFixed(0) ?? 'Unavailable'),
-                _metricRow('Sleep Score', latest.sleepScore?.toStringAsFixed(0) ?? 'Unavailable'),
-                _metricRow('Energy Score', latest.energyScore?.toStringAsFixed(0) ?? 'Unavailable'),
+                _metricRow('Mood Score', latest.moodScore?.toStringAsFixed(0) ?? '—'),
+                _metricRow('Sleep Score', latest.sleepScore?.toStringAsFixed(0) ?? '—'),
+                _metricRow('Energy Score', latest.energyScore?.toStringAsFixed(0) ?? '—'),
                 _metricRow(
                   'Wellbeing',
                   latest.wellbeingScore != null
                       ? '${latest.wellbeingScore!.toStringAsFixed(0)}%'
-                      : 'Unavailable',
+                      : '—',
                 ),
                 _metricRow(
-                  'Risk Score',
-                  latest.riskScore != null ? '${latest.riskScore!.toStringAsFixed(0)}%' : 'Unavailable',
+                  'Check-in wellbeing indicator',
+                  latest.riskScore != null ? '${latest.riskScore!.toStringAsFixed(0)}/100' : '—',
                 ),
               ],
             ),
@@ -454,19 +458,19 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting &&
                   !snapshot.hasData) {
-                return const AppCard(
+                return AppCard(
                   child: Text(
                     'Loading latest clinical assessment...',
-                    style: TextStyle(color: Colors.white70),
+                    style: TextStyle(color: AppColors.ink70),
                   ),
                 );
               }
 
               if (snapshot.hasError && !snapshot.hasData) {
-                return const AppCard(
+                return AppCard(
                   child: Text(
                     'Clinical assessment unavailable.',
-                    style: TextStyle(color: Colors.white70),
+                    style: TextStyle(color: AppColors.ink70),
                   ),
                 );
               }
@@ -492,17 +496,17 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Latest Clinical Assessment',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.ink,
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _metricRow('PHQ-9', phq9?.toStringAsFixed(0) ?? 'Unavailable'),
-                    _metricRow('GAD-7', gad7?.toStringAsFixed(0) ?? 'Unavailable'),
+                    _metricRow('PHQ-9', phq9?.toStringAsFixed(0) ?? '—'),
+                    _metricRow('GAD-7', gad7?.toStringAsFixed(0) ?? '—'),
                   ],
                 ),
               );
@@ -519,15 +523,15 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
                     Text(
                       'Trend',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.65),
+                        color: AppColors.ink.withValues(alpha: 0.65),
                         fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       _trendText(latest.riskScore, previous?.riskScore),
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.ink,
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                       ),
@@ -540,15 +544,15 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
                     Text(
                       'Data points',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.65),
+                        color: AppColors.ink.withValues(alpha: 0.65),
                         fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       '${sortedDesc.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.ink,
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                       ),
@@ -563,10 +567,10 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Detailed Metrics',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.ink,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -574,15 +578,15 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
                 const SizedBox(height: 12),
                 _metricRow(
                   'Mood Avg',
-                  moodAverage == null ? 'Unavailable' : '${moodAverage.toStringAsFixed(1)}/10',
+                  moodAverage == null ? '—' : '${moodAverage.toStringAsFixed(1)}/10',
                 ),
                 _metricRow(
                   'Sleep Avg',
-                  sleepAverage == null ? 'Unavailable' : '${sleepAverage.toStringAsFixed(1)}/10',
+                  sleepAverage == null ? '—' : '${sleepAverage.toStringAsFixed(1)}/10',
                 ),
                 _metricRow(
                   'Anxiety Avg',
-                  anxietyAverage == null ? 'Unavailable' : '${anxietyAverage.toStringAsFixed(1)}/10',
+                  anxietyAverage == null ? '—' : '${anxietyAverage.toStringAsFixed(1)}/10',
                 ),
                 _metricRow('Data Points', '$dataPoints'),
               ],
@@ -669,7 +673,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
                       IconButton(
                         tooltip: 'Check again',
                         visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.refresh, size: 18, color: Colors.white54),
+                        icon: Icon(Icons.refresh, size: 18, color: AppColors.ink54),
                         onPressed: () {
                           syncService.refreshWatchStatus();
                           syncService.syncNow();
@@ -680,7 +684,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
                   if (hint != null)
                     Padding(
                       padding: const EdgeInsets.only(left: 26),
-                      child: Text(hint, style: const TextStyle(color: Colors.white60, fontSize: 11, height: 1.35)),
+                      child: Text(hint, style: TextStyle(color: AppColors.ink60, fontSize: 11, height: 1.35)),
                     ),
                   if (action != null)
                     Padding(padding: const EdgeInsets.only(left: 18), child: action),
@@ -699,14 +703,14 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: [
-                  const Icon(Icons.health_and_safety_outlined, color: AppTheme.warningAmber, size: 18),
+                  Icon(Icons.health_and_safety_outlined, color: AppTheme.warningAmber, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       state == HealthConnectState.unavailable
                           ? 'Health Connect is not installed: sleep and steps cannot be read.'
                           : 'Health Connect access not granted: sleep and steps are not shared.',
-                      style: const TextStyle(color: AppTheme.warningAmber, fontSize: 12),
+                      style: TextStyle(color: AppTheme.warningAmber, fontSize: 12),
                     ),
                   ),
                   if (state == HealthConnectState.permissionDenied)
@@ -739,10 +743,10 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
         elevation: 0,
       ),
       body: patientId == null
-          ? const Center(
+          ? Center(
               child: Text(
                 'Please sign in to view your twin.',
-                style: TextStyle(color: Colors.white70),
+                style: TextStyle(color: AppColors.ink70),
               ),
             )
           : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -751,7 +755,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting &&
                     !snapshot.hasData) {
-                  return const Center(
+                  return Center(
                     child: CircularProgressIndicator(color: AppTheme.primaryIndigo),
                   );
                 }
@@ -763,7 +767,7 @@ class _MyTwinScreenState extends State<MyTwinScreen> {
                       padding: const EdgeInsets.all(24),
                       child: Text(
                         'Failed to load twin data: $errorText',
-                        style: const TextStyle(color: Colors.white70),
+                        style: TextStyle(color: AppColors.ink70),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -830,7 +834,7 @@ class _RiskGaugePainter extends CustomPainter {
       center,
       radius,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.05)
+        ..color = AppColors.ink.withValues(alpha: 0.05)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -857,7 +861,7 @@ class _RiskGaugePainter extends CustomPainter {
       center,
       radius + 12,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.1)
+        ..color = AppColors.ink.withValues(alpha: 0.1)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
