@@ -1,0 +1,548 @@
+rules_version = '2';
+
+// MindTwin Firestore security rules.
+// Binding contract: docs/DATA_MODEL.md. Roles come ONLY from the Firebase Auth
+// custom claim `role` (set by Cloud Functions / admin scripts).
+// Cloud Functions use the Admin SDK and bypass these rules.
+// Anything not matched below is denied.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------- helpers
+    function signedIn() {
+      return request.auth != null;
+    }
+    function uid() {
+      return request.auth.uid;
+    }
+    function tokenRole() {
+      return request.auth.token.get('role', '');
+    }
+    function isPatient() {
+      return signedIn() && tokenRole() == 'patient';
+    }
+    function isTherapist() {
+      return signedIn() && tokenRole() == 'therapist';
+    }
+    function userPath(id) {
+      return /databases/$(database)/documents/users/$(id);
+    }
+    // Therapist currently linked to the CALLING patient (authoritative: users doc).
+    function myTherapistId() {
+      return get(userPath(uid())).data.get('therapistId', null);
+    }
+    // Caller is an approved therapist and is the CURRENT therapist of patientId.
+    function isTherapistOf(patientId) {
+      return isTherapist()
+        && patientId is string
+        && exists(userPath(patientId))
+        && get(userPath(patientId)).data.get('therapistId', null) == uid();
+    }
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function optString(d, k, maxLen) {
+      return !(k in d) || d[k] == null || (d[k] is string && d[k].size() <= maxLen);
+    }
+    function isScore(v) {
+      return v is number && v >= 0 && v <= 100;
+    }
+
+    // Read access to a per-patient document (vitals, daily_logs,
+    // clinical_assessments, crisis_events): the patient themself, or an
+    // approved therapist. Multi-patient therapist feeds must filter on
+    // where('therapistId','==',uid) (stamp is kept current by joinTherapist);
+    // single-patient therapist queries must filter on where('patientId','==',pid).
+    function canReadPatientDoc() {
+      return signedIn() && (
+        resource.data.patientId == uid()
+        || (isTherapist() && (
+              resource.data.therapistId == uid()
+              || isTherapistOf(resource.data.patientId)))
+      );
+    }
+
+    // New per-patient doc written by the patient app: owned by the caller and
+    // stamped with the caller's CURRENT therapistId from users/{uid} (never a
+    // name, never ''), or null while the patient is not linked yet. Callers
+    // without a role claim (pre-registration) are treated as patients; any
+    // therapist / therapist_pending claim is refused. Server functions never
+    // trust this stamp for routing (they resolve it from users/{patientId}).
+    function isOwnPatientStamp(d) {
+      return signedIn()
+        && tokenRole() in ['patient', '']
+        && d.patientId == uid()
+        && 'therapistId' in d
+        && (exists(userPath(uid()))
+              ? d.therapistId == get(userPath(uid())).data.get('therapistId', null)
+              : d.therapistId == null)
+        && (d.therapistId == null || (d.therapistId is string && d.therapistId.size() > 0));
+    }
+    function optTimestamp(d, k) {
+      return !(k in d) || d[k] == null || d[k] is timestamp;
+    }
+    function optNumberIn(d, k, lo, hi) {
+      return !(k in d) || d[k] == null || (d[k] is number && d[k] >= lo && d[k] <= hi);
+    }
+    function optBool(d, k) {
+      return !(k in d) || d[k] is bool;
+    }
+    function optMap(d, k) {
+      return !(k in d) || d[k] == null || d[k] is map;
+    }
+    function optList(d, k, maxLen) {
+      return !(k in d) || d[k] == null || (d[k] is list && d[k].size() <= maxLen);
+    }
+
+    // ------------------------------------------------------------------ users
+    function ownerWritableUserFields() {
+      return ['name', 'phone', 'photoUrl', 'settings',
+              'latestRiskScore', 'latestRiskState', 'latestWellbeingScore',
+              'latestMoodScore', 'lastCheckInAt', 'latestVitals',
+              'latestPhq9', 'latestGad7', 'streak', 'latestMood'];
+    }
+    // {total, severity, at}
+    function validScoreSnapshot(s, maxTotal) {
+      return s is map
+        && s.keys().hasOnly(['total', 'severity', 'at'])
+        && (!('total' in s) || (s.total is number && s.total >= 0 && s.total <= maxTotal))
+        && (!('severity' in s) || s.severity == null || (s.severity is string && s.severity.size() <= 64))
+        && (!('at' in s) || s.at is timestamp);
+    }
+    function ownerUserFieldsValid(d, keys) {
+      return (!('name' in keys) || (d.name is string && d.name.size() > 0 && d.name.size() <= 100))
+        && (!('phone' in keys) || d.phone == null || (d.phone is string && d.phone.size() <= 32))
+        && (!('photoUrl' in keys) || d.photoUrl == null || (d.photoUrl is string && d.photoUrl.size() <= 2048))
+        && (!('settings' in keys) || d.settings is map)
+        && (!('latestRiskScore' in keys) || d.latestRiskScore == null || isScore(d.latestRiskScore))
+        && (!('latestWellbeingScore' in keys) || d.latestWellbeingScore == null || isScore(d.latestWellbeingScore))
+        && (!('latestMoodScore' in keys) || d.latestMoodScore == null || d.latestMoodScore is number)
+        && (!('latestRiskState' in keys) || d.latestRiskState == null || (d.latestRiskState is string && d.latestRiskState.size() <= 32))
+        && (!('lastCheckInAt' in keys) || d.lastCheckInAt is timestamp)
+        && (!('latestVitals' in keys) || d.latestVitals is map)
+        && (!('latestPhq9' in keys) || d.latestPhq9 == null || validScoreSnapshot(d.latestPhq9, 27))
+        && (!('latestGad7' in keys) || d.latestGad7 == null || validScoreSnapshot(d.latestGad7, 21))
+        && (!('streak' in keys) || (d.streak is int && d.streak >= 0 && d.streak <= 100000))
+        && (!('latestMood' in keys) || d.latestMood == null || (d.latestMood is string && d.latestMood.size() <= 64));
+    }
+    // Same bounds as functions/src/logic/vitals.js THRESHOLD_BOUNDS.
+    // high > low is checked against the defaults (120 / 45) for a missing side.
+    function validThresholds(t) {
+      return t is map
+        && t.keys().hasOnly(['heartRateHigh', 'heartRateLow', 'sleepHoursLow'])
+        && (!('heartRateHigh' in t) || (t.heartRateHigh is number && t.heartRateHigh >= 80 && t.heartRateHigh <= 220))
+        && (!('heartRateLow' in t) || (t.heartRateLow is number && t.heartRateLow >= 25 && t.heartRateLow <= 80))
+        && (!('sleepHoursLow' in t) || (t.sleepHoursLow is number && t.sleepHoursLow >= 0 && t.sleepHoursLow <= 12))
+        && t.get('heartRateLow', 45) < t.get('heartRateHigh', 120);
+    }
+
+    match /users/{userId} {
+      // Owner, or the patient's assigned therapist. List queries by a
+      // therapist must include where('therapistId', '==', uid).
+      allow read: if signedIn() && (
+        uid() == userId
+        || (isTherapist() && resource.data.therapistId == uid())
+      );
+
+      // Owner may create a bare profile (server fields are added by callables).
+      allow create: if signedIn() && uid() == userId
+        && request.resource.data.keys().hasOnly(ownerWritableUserFields())
+        && ownerUserFieldsValid(request.resource.data, request.resource.data.keys());
+
+      allow update: if signedIn() && (
+        // Owner: only client-writable fields; role/therapistId/therapistName/
+        // status/inviteCode/createdAt (and everything else) are immutable.
+        (uid() == userId
+          && changedKeys().hasOnly(ownerWritableUserFields())
+          && ownerUserFieldsValid(request.resource.data, changedKeys()))
+        // Assigned therapist: ONLY vitalThresholds of their patient.
+        || (isTherapist()
+          && resource.data.get('role', '') == 'patient'
+          && resource.data.get('therapistId', null) == uid()
+          && changedKeys().hasOnly(['vitalThresholds'])
+          && validThresholds(request.resource.data.vitalThresholds))
+      );
+
+      allow delete: if false;
+    }
+
+    // ----------------------------------------------------------- invite_codes
+    match /invite_codes/{code} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------- fcm_tokens
+    function validFcmToken(d) {
+      return d.keys().hasOnly(['uid', 'platform', 'app', 'updatedAt'])
+        && d.keys().hasAll(['uid', 'platform', 'app', 'updatedAt'])
+        && d.uid == uid()
+        && d.platform in ['android', 'ios']
+        && d.app in ['patient', 'therapist']
+        && d.updatedAt == request.time;
+    }
+    match /fcm_tokens/{token} {
+      allow read: if signedIn() && resource.data.uid == uid();
+      // Contract: request.resource.data.uid == auth.uid. A device that is
+      // re-used by another account can take over its own token doc.
+      allow create, update: if signedIn() && token.size() <= 4096 && validFcmToken(request.resource.data);
+      allow delete: if signedIn() && resource.data.uid == uid();
+    }
+
+    // ----------------------------------------------------------------- vitals
+    function validVital(d) {
+      return d.keys().hasOnly(['patientId', 'therapistId', 'type', 'value', 'unit',
+                               'measuredAt', 'source', 'createdAt'])
+        && d.keys().hasAll(['patientId', 'therapistId', 'type', 'value', 'unit',
+                            'measuredAt', 'source', 'createdAt'])
+        && ((d.type == 'heart_rate' && d.unit == 'bpm')
+            || (d.type == 'sleep' && d.unit == 'hours')
+            || (d.type == 'steps' && d.unit == 'count'))
+        && d.value is number
+        && d.measuredAt is timestamp
+        && d.measuredAt <= request.time + duration.value(5, 'm')
+        && d.source in ['wear_os', 'health_connect']
+        && d.createdAt == request.time;
+    }
+    match /vitals/{vitalId} {
+      allow read: if canReadPatientDoc();
+      allow create: if isOwnPatientStamp(request.resource.data)
+        && validVital(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // ------------------------------------------------------------- daily_logs
+    function dailyLogFields() {
+      return ['patientId', 'therapistId', 'timestamp', 'clientCreatedAt', 'riskScore',
+              'riskScoreSource', 'wellbeingScore', 'mood', 'moodKey', 'moodScore', 'sleep',
+              'sleepKey', 'sleepScore', 'energy', 'energyKey', 'energyScore', 'worries',
+              'positives', 'dailyGoal', 'dailyGoalKey', 'goalLabel', 'goalCompleted',
+              'summaryText', 'optionalNote', 'breathingExerciseDone', 'breathingFeedback',
+              'thoughtDump', 'thoughtDumpSentiment', 'mlSentiment'];
+    }
+    match /daily_logs/{logId} {
+      allow read: if canReadPatientDoc();
+      allow create: if isOwnPatientStamp(request.resource.data)
+        && request.resource.data.keys().hasOnly(dailyLogFields())
+        && request.resource.data.timestamp is timestamp
+        && request.resource.data.timestamp <= request.time + duration.value(5, 'm')
+        && optTimestamp(request.resource.data, 'clientCreatedAt')
+        && optNumberIn(request.resource.data, 'riskScore', 0, 100)
+        && optNumberIn(request.resource.data, 'wellbeingScore', 0, 100)
+        && optList(request.resource.data, 'worries', 50)
+        && optList(request.resource.data, 'positives', 50)
+        && optMap(request.resource.data, 'mlSentiment')
+        && optString(request.resource.data, 'riskScoreSource', 64)
+        && optString(request.resource.data, 'thoughtDump', 10000)
+        && optString(request.resource.data, 'optionalNote', 10000)
+        && optString(request.resource.data, 'summaryText', 10000);
+      // Owner may merge ML results only, after create.
+      allow update: if signedIn()
+        && resource.data.patientId == uid()
+        && tokenRole() in ['patient', '']
+        && changedKeys().hasOnly(['mlSentiment', 'mlRisk', 'mlAnomaly'])
+        && optMap(request.resource.data, 'mlSentiment')
+        && optMap(request.resource.data, 'mlRisk')
+        && optMap(request.resource.data, 'mlAnomaly');
+      allow delete: if false;
+    }
+
+    // --------------------------------------------------- clinical_assessments
+    function assessmentFields() {
+      return ['patientId', 'therapistId', 'type', 'totalScore', 'item9', 'phq9Answers',
+              'phq9Severity', 'phq9Score', 'gad7Score', 'gad7Answers', 'gad7Severity',
+              'answers', 'timestamp', 'clientCreatedAt', 'legacyQueued'];
+    }
+    match /clinical_assessments/{assessmentId} {
+      allow read: if canReadPatientDoc();
+      // Legacy offline uploads (legacyQueued: true) may omit most optional keys.
+      allow create: if isOwnPatientStamp(request.resource.data)
+        && request.resource.data.keys().hasOnly(assessmentFields())
+        && request.resource.data.timestamp is timestamp
+        && request.resource.data.timestamp <= request.time + duration.value(5, 'm')
+        && optTimestamp(request.resource.data, 'clientCreatedAt')
+        && optNumberIn(request.resource.data, 'totalScore', 0, 27)
+        && optNumberIn(request.resource.data, 'phq9Score', 0, 27)
+        && optNumberIn(request.resource.data, 'gad7Score', 0, 21)
+        && optNumberIn(request.resource.data, 'item9', 0, 3)
+        && (!('phq9Answers' in request.resource.data) || request.resource.data.phq9Answers == null
+            || (request.resource.data.phq9Answers is list && request.resource.data.phq9Answers.size() == 9))
+        && optList(request.resource.data, 'gad7Answers', 7)
+        && optMap(request.resource.data, 'answers')
+        && optBool(request.resource.data, 'legacyQueued')
+        && optString(request.resource.data, 'type', 32);
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------- journal_entries
+    function journalFields() {
+      return ['patientId', 'therapistId', 'source', 'text', 'transcript', 'durationSeconds',
+              'hasAudio', 'audioUploaded', 'createdAt', 'clientCreatedAt'];
+    }
+    match /journal_entries/{entryId} {
+      allow read: if canReadPatientDoc();
+      allow create: if isOwnPatientStamp(request.resource.data)
+        && request.resource.data.keys().hasOnly(journalFields())
+        && request.resource.data.keys().hasAll(['patientId', 'therapistId', 'source', 'text', 'createdAt'])
+        && request.resource.data.source == 'voice_journal'
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 10000
+        && optString(request.resource.data, 'transcript', 10000)
+        && optNumberIn(request.resource.data, 'durationSeconds', 0, 86400)
+        && optBool(request.resource.data, 'hasAudio')
+        && optBool(request.resource.data, 'audioUploaded')
+        && request.resource.data.createdAt == request.time
+        && optTimestamp(request.resource.data, 'clientCreatedAt');
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.patientId == uid();
+    }
+
+    // -------------------------------------------------------------- reminders
+    match /reminders/{reminderId} {
+      allow read: if signedIn() && resource.data.patientId == uid();
+      allow create: if signedIn()
+        && tokenRole() in ['patient', '']
+        && request.resource.data.keys().hasOnly(['patientId', 'type', 'scheduledAt', 'completed', 'createdAt'])
+        && request.resource.data.keys().hasAll(['patientId', 'type', 'scheduledAt', 'completed', 'createdAt'])
+        && request.resource.data.patientId == uid()
+        && request.resource.data.type is string
+        && request.resource.data.type.size() > 0
+        && request.resource.data.type.size() <= 32
+        && request.resource.data.scheduledAt is timestamp
+        && request.resource.data.completed == false
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn()
+        && resource.data.patientId == uid()
+        && changedKeys().hasOnly(['completed'])
+        && request.resource.data.completed is bool;
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------- crisis_events
+    match /crisis_events/{eventId} {
+      allow read: if canReadPatientDoc();
+
+      // Patients raise sos / checkin_crisis / chat_crisis, and phq9_severe only
+      // under the id assessment_<assessmentId>, for themselves.
+      allow create: if isOwnPatientStamp(request.resource.data)
+        // Optional diagnostics (clientCreatedAt/source/details) are tolerated
+        // so a crisis report is never rejected over non-security metadata.
+        && request.resource.data.keys().hasOnly(['patientId', 'therapistId', 'patientName',
+             'eventType', 'severity', 'title', 'message', 'acknowledged', 'timestamp',
+             'clientCreatedAt', 'source', 'details'])
+        && (!('clientCreatedAt' in request.resource.data) || request.resource.data.clientCreatedAt is timestamp)
+        && optString(request.resource.data, 'source', 64)
+        && (!('details' in request.resource.data) || (request.resource.data.details is map
+              && request.resource.data.details.size() <= 30))
+        && request.resource.data.keys().hasAll(['patientId', 'therapistId', 'eventType',
+             'severity', 'acknowledged', 'timestamp'])
+        && (request.resource.data.eventType in ['sos', 'checkin_crisis', 'chat_crisis']
+            // Immediate on-device PHQ-9 alert, written BEFORE the assessment with
+            // the same deterministic id onAssessmentCreated uses (dedupe).
+            || (request.resource.data.eventType == 'phq9_severe'
+                && eventId.matches('assessment_[A-Za-z0-9_-]{1,200}')
+                && request.resource.data.severity in ['critical', 'high']))
+        && request.resource.data.severity in ['critical', 'high', 'medium']
+        && request.resource.data.acknowledged == false
+        && request.resource.data.timestamp == request.time
+        && optString(request.resource.data, 'patientName', 100)
+        && optString(request.resource.data, 'title', 200)
+        && optString(request.resource.data, 'message', 2000);
+
+      // Current therapist of that patient may only acknowledge.
+      allow update: if isTherapistOf(resource.data.patientId)
+        && changedKeys().hasOnly(['acknowledged', 'acknowledgedAt', 'acknowledgedBy'])
+        && request.resource.data.acknowledged == true
+        && request.resource.data.acknowledgedAt == request.time
+        && request.resource.data.acknowledgedBy == uid();
+
+      allow delete: if false;
+    }
+
+    // ------------------------------------------------------------------ chats
+    // chatId = sorted([uidA, uidB]).join('__')
+    function chatMembers(chatId) {
+      return chatId.split('__');
+    }
+    function isChatMember(chatId) {
+      return signedIn()
+        && chatMembers(chatId).size() == 2
+        && chatMembers(chatId)[0] < chatMembers(chatId)[1]
+        && uid() in chatMembers(chatId);
+    }
+    function otherMember(chatId) {
+      return chatMembers(chatId)[0] == uid() ? chatMembers(chatId)[1] : chatMembers(chatId)[0];
+    }
+    // Patient <-> own therapist only.
+    function chatLinkOk(chatId) {
+      return (isPatient() && myTherapistId() == otherMember(chatId))
+        || isTherapistOf(otherMember(chatId));
+    }
+    function unreadChangedKeys() {
+      return request.resource.data.get('unread', {})
+        .diff(resource.data.get('unread', {})).affectedKeys();
+    }
+    function chatDocFields() {
+      return ['participants', 'names', 'lastMessage', 'lastSenderId', 'lastMessageAt', 'unread'];
+    }
+
+    match /chats/{chatId} {
+      allow get: if isChatMember(chatId);
+      allow list: if signedIn() && uid() in resource.data.participants;
+
+      allow create: if isChatMember(chatId) && chatLinkOk(chatId)
+        && request.resource.data.keys().hasOnly(chatDocFields())
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.resource.data.participants.hasAll(chatMembers(chatId))
+        && (!('lastSenderId' in request.resource.data) || request.resource.data.lastSenderId == uid())
+        && (!('unread' in request.resource.data)
+            || (request.resource.data.unread is map
+                && request.resource.data.unread.keys().hasOnly([otherMember(chatId)])));
+
+      allow update: if isChatMember(chatId) && (
+        // Sender (with the message batch): summary fields + the OTHER
+        // member's unread counter only. Requires a current link.
+        (chatLinkOk(chatId)
+          && changedKeys().hasOnly(['names', 'lastMessage', 'lastSenderId', 'lastMessageAt', 'unread'])
+          && request.resource.data.lastSenderId == uid()
+          && request.resource.data.participants == resource.data.participants
+          && unreadChangedKeys().hasOnly([otherMember(chatId)]))
+        // Reader: may only reset their own unread counter to 0.
+        || (changedKeys().hasOnly(['unread'])
+          && unreadChangedKeys().hasOnly([uid()])
+          && request.resource.data.unread[uid()] == 0)
+      );
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isChatMember(chatId);
+
+        allow create: if isChatMember(chatId) && chatLinkOk(chatId)
+          && request.resource.data.keys().hasOnly(['id', 'senderId', 'receiverId',
+               'senderName', 'text', 'createdAt', 'read'])
+          && request.resource.data.keys().hasAll(['senderId', 'receiverId', 'text', 'createdAt'])
+          && request.resource.data.senderId == uid()
+          && request.resource.data.receiverId == otherMember(chatId)
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.get('read', false) == false
+          && (!('id' in request.resource.data) || request.resource.data.id == messageId)
+          && optString(request.resource.data, 'senderName', 100);
+
+        // Receiver may only mark as read.
+        allow update: if isChatMember(chatId)
+          && resource.data.receiverId == uid()
+          && changedKeys().hasOnly(['read'])
+          && request.resource.data.read == true;
+
+        allow delete: if false;
+      }
+    }
+
+    // ----------------------------------------------------------- appointments
+    function appointmentFields() {
+      return ['patientId', 'therapistId', 'patientName', 'therapistName', 'requestedBy',
+              'status', 'scheduledAt', 'proposedAt', 'durationMinutes', 'isVirtual',
+              'meetingUrl', 'reason', 'notes', 'createdAt', 'updatedAt'];
+    }
+    function validNewAppointment(d) {
+      return d.keys().hasOnly(appointmentFields())
+        && d.keys().hasAll(['patientId', 'therapistId', 'requestedBy', 'status',
+                            'durationMinutes', 'isVirtual', 'createdAt', 'updatedAt'])
+        && d.durationMinutes in [30, 45, 60]
+        && d.isVirtual is bool
+        && d.get('meetingUrl', null) == null
+        && d.createdAt == request.time
+        && d.updatedAt == request.time
+        && optString(d, 'patientName', 100)
+        && optString(d, 'therapistName', 100)
+        && optString(d, 'reason', 2000)
+        && optString(d, 'notes', 4000);
+    }
+    function therapistTransitionOk(from, to) {
+      return from == to
+        || (from == 'requested' && to in ['scheduled', 'declined', 'cancelled'])
+        || (from == 'scheduled' && to in ['cancelled', 'completed', 'no_show']);
+    }
+
+    match /appointments/{appointmentId} {
+      allow read: if signedIn() && (
+        resource.data.patientId == uid()
+        || (isTherapist() && resource.data.therapistId == uid())
+      );
+
+      allow create: if
+        // Patient requests with their own therapist.
+        (isPatient()
+          && request.resource.data.patientId == uid()
+          && request.resource.data.therapistId == myTherapistId()
+          && request.resource.data.status == 'requested'
+          && request.resource.data.requestedBy == 'patient'
+          && request.resource.data.proposedAt is timestamp
+          && request.resource.data.get('scheduledAt', null) == null
+          && validNewAppointment(request.resource.data))
+        // Therapist schedules directly for their own patient.
+        || (isTherapist()
+          && request.resource.data.therapistId == uid()
+          && isTherapistOf(request.resource.data.patientId)
+          && request.resource.data.status == 'scheduled'
+          && request.resource.data.requestedBy == 'therapist'
+          && request.resource.data.scheduledAt is timestamp
+          && request.resource.data.get('proposedAt', null) == null
+          && validNewAppointment(request.resource.data));
+
+      allow update: if
+        // Patient may only cancel their own requested/scheduled appointment.
+        (isPatient()
+          && resource.data.patientId == uid()
+          && resource.data.status in ['requested', 'scheduled']
+          && request.resource.data.status == 'cancelled'
+          && changedKeys().hasOnly(['status', 'updatedAt', 'cancelledBy'])
+          && request.resource.data.cancelledBy == uid()
+          && request.resource.data.updatedAt == request.time)
+        // Therapist of that patient: status / scheduledAt / notes only.
+        // meetingUrl is never client-writable (set by onAppointmentWritten).
+        || (isTherapist()
+          && resource.data.therapistId == uid()
+          && isTherapistOf(resource.data.patientId)
+          && changedKeys().hasOnly(['status', 'scheduledAt', 'notes', 'updatedAt', 'cancelledBy'])
+          && therapistTransitionOk(resource.data.status, request.resource.data.status)
+          && (request.resource.data.status != 'scheduled' || request.resource.data.scheduledAt is timestamp)
+          && (!('cancelledBy' in changedKeys())
+              || (request.resource.data.status == 'cancelled' && request.resource.data.cancelledBy == uid()))
+          && (request.resource.data.status != 'cancelled' || resource.data.status == 'cancelled'
+              || request.resource.data.get('cancelledBy', null) == uid())
+          && optString(request.resource.data, 'notes', 4000)
+          && request.resource.data.updatedAt == request.time);
+
+      allow delete: if false;
+
+      // Therapist-private session notes; append-only; no patient access.
+      match /notes/{noteId} {
+        function parentAppointment() {
+          return get(/databases/$(database)/documents/appointments/$(appointmentId));
+        }
+        allow read: if isTherapist()
+          && parentAppointment().data.therapistId == uid();
+        allow create: if isTherapist()
+          && parentAppointment().data.therapistId == uid()
+          && request.resource.data.keys().hasOnly(['therapistId', 'text', 'createdAt'])
+          && request.resource.data.keys().hasAll(['therapistId', 'text', 'createdAt'])
+          && request.resource.data.therapistId == uid()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 10000
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    // Everything else (incl. alert_cooldowns, push_receipts and legacy
+    // collections such as anomalies, interventions, top-level messages)
+    // is denied by default.
+  }
+}

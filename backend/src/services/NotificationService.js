@@ -42,7 +42,10 @@ class NotificationService {
         await admin.messaging().send({ ...message, token });
         delivered += 1;
       } catch (error) {
-        if (error.code === 'messaging/registration-token-not-registered') {
+        if (
+          error.code === 'messaging/registration-token-not-registered' ||
+          error.code === 'messaging/invalid-registration-token'
+        ) {
           staleTokens.push(token);
         }
       }
@@ -50,7 +53,15 @@ class NotificationService {
     if (staleTokens.length) {
       try {
         const db = Database.getInstance().getDB();
-        db.prepare('DELETE FROM device_tokens WHERE token = ?').run(staleTokens);
+        // better-sqlite3 binds an array argument as N positional parameters, so
+        // passing the whole array to a single `?` throws "Too many parameter
+        // values" whenever more than one token is stale. Delete one by one
+        // inside a single transaction instead.
+        const del = db.prepare('DELETE FROM device_tokens WHERE token = ?');
+        const pruneAll = db.transaction((list) => {
+          for (const t of list) del.run(t);
+        });
+        pruneAll(staleTokens);
       } catch (error) {
         console.warn('Unable to prune stale device tokens:', error.message);
       }
