@@ -57,7 +57,7 @@ class _TherapistPendingScreenState extends State<TherapistPendingScreen> {
       backgroundColor: AppTheme.backgroundDark,
       appBar: AppBar(
         title: const Text('Approval pending'),
-        automaticallyImplyLeading: false,
+        leading: IconButton(icon: const Icon(Icons.arrow_back), tooltip: "Back", onPressed: _signOut),
         actions: [
           IconButton(icon: const Icon(Icons.logout), tooltip: 'Sign out', onPressed: _signOut),
         ],
@@ -113,3 +113,4 @@ class _TherapistPendingScreenState extends State<TherapistPendingScreen> {
     );
   }
 }
+

@@ -92,7 +92,7 @@ class RoleSelectionScreen extends StatelessWidget {
                           icon: '🌱',
                           color: AppTheme.primaryIndigo,
                           onTap: () {
-                            Navigator.pushReplacement(
+                            Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const PatientAuthScreen(),
@@ -112,7 +112,7 @@ class RoleSelectionScreen extends StatelessWidget {
                           icon: '👨‍⚕️',
                           color: AppTheme.accentCyan,
                           onTap: () {
-                            Navigator.pushReplacement(
+                            Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const TherapistAuthScreen(),
@@ -242,3 +242,4 @@ class RoleSelectionScreen extends StatelessWidget {
     );
   }
 }
+
