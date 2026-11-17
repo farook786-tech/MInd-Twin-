@@ -13,7 +13,7 @@ const clinicalService = new ClinicalService();
  * Submit PHQ-9 Assessment (Hospital-Grade Clinical Assessment)
  * Request: { patientId, therapistId, responses: [0-3, ...9 items], notes }
  */
-router.post('/phq9', authMiddleware, requirePatientAccess, (req, res) => {
+router.post('/phq9', authMiddleware, requirePatientAccess, async (req, res) => {
   try {
     const {
       patientId,
@@ -28,7 +28,7 @@ router.post('/phq9', authMiddleware, requirePatientAccess, (req, res) => {
       });
     }
 
-    const result = clinicalService.createPHQ9Assessment(
+    const result = await clinicalService.createPHQ9Assessment(
       patientId,
       therapistId,
       responses,
@@ -40,8 +40,12 @@ router.post('/phq9', authMiddleware, requirePatientAccess, (req, res) => {
       assessment: result,
     });
   } catch (error) {
+    // Validation errors from scorePHQ9 are client errors; anything else is a server error.
+    if (/PHQ-9 requires|Each response must/.test(error.message || '')) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('PHQ-9 assessment error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to save PHQ-9 assessment' });
   }
 });
 

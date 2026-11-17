@@ -1,7 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'dart:math';
 import 'daily_log_source.dart';
+import 'ml_anomaly_service.dart';
+import 'ml_risk_service.dart';
 import '../models/daily_log.dart';
+
+// DECISION SUPPORT ONLY. Per-log risk comes from MlRiskService.logRisk (the
+// single documented, monotonic formula: mood/energy higher-is-better, sleep
+// U-shaped around 7-9 h, missing values dropped). See docs/ML_SAFETY_EVALUATION.md.
 
 /// Represents ML analysis results
 class MentalHealthAnalysis {
@@ -96,11 +102,11 @@ class MLAnalysisService {
         wellbeingIndex: wellbeingIndex,
         recommendation: recommendation,
         detailedMetrics: {
-          'anxietyAverage': _average(sortedLogs.map((l) => l.anxietyLevel / 10.0).toList()),
-          'moodAverage': _average(sortedLogs.map((l) => l.moodScore / 10.0).toList()),
-          'sleepAverage': _average(sortedLogs.map((l) => l.sleepHours / 12.0).toList()),
-          'wellbeingAverage': _average(sortedLogs.map((l) => l.wellbeingScore / 100.0).toList()),
-          'stdDeviation': _standardDeviation(sortedLogs.map((l) => l.anxietyLevel / 10.0).toList()),
+          'anxietyAverage': _average(_vals(sortedLogs, (l) => l.anxietyLevel, 10.0)),
+          'moodAverage': _average(_vals(sortedLogs, (l) => l.moodScore, 10.0)),
+          'sleepAverage': _average(_vals(sortedLogs, (l) => l.sleepHours, 12.0)),
+          'wellbeingAverage': _average(_vals(sortedLogs, (l) => l.wellbeingScore, 100.0)),
+          'stdDeviation': _standardDeviation(_vals(sortedLogs, (l) => l.anxietyLevel, 10.0)),
           'volatility': _calculateVolatility(sortedLogs),
           'dataPoints': sortedLogs.length,
         },
@@ -111,28 +117,21 @@ class MLAnalysisService {
     }
   }
 
-  /// Calculate overall risk score using weighted metrics (0.0 - 1.0)
+  /// Per-log risk on a 0..1 scale (null when the log has no usable values).
+  double? _logRisk01(DailyLog log) {
+    final r = MlRiskService.logRisk(log);
+    return r == null ? null : r / 100.0;
+  }
+
+  /// Risk scores for [logs] (newest first in, newest first out), dropping unusable logs.
+  List<double> _riskSeriesNewestFirst(List<DailyLog> logs) =>
+      logs.map(_logRisk01).whereType<double>().toList();
+
+  /// Overall risk 0..1: mean of the 7 most recent usable logs.
   double _calculateRiskScore(List<DailyLog> logs) {
-    if (logs.isEmpty) return 0.0;
-
-    final recentLogs = logs.take(7).toList();
-
-    double totalRisk = 0.0;
-
-    for (var log in recentLogs) {
-      // Normalize values to 0-1
-      double anxiety = (log.anxietyLevel / 10.0).clamp(0.0, 1.0);
-      double mood = (1.0 - (log.moodScore / 10.0)).clamp(0.0, 1.0);
-      double sleep = (1.0 - (log.sleepHours / 12.0)).clamp(0.0, 1.0);
-      double wellbeing = (1.0 - (log.wellbeingScore / 100.0)).clamp(0.0, 1.0);
-
-      // Weighted calculation
-      double logRisk = (anxiety * 0.4 + mood * 0.30 + sleep * 0.15 + wellbeing * 0.15);
-
-      totalRisk += logRisk;
-    }
-
-    return (totalRisk / recentLogs.length).clamp(0.0, 1.0);
+    final recent = _riskSeriesNewestFirst(logs).take(7).toList();
+    if (recent.isEmpty) return 0.0;
+    return (_average(recent)).clamp(0.0, 1.0);
   }
 
   /// Analyze trend using linear regression
@@ -141,15 +140,11 @@ class MLAnalysisService {
       return {'slope': 0.0, 'direction': 'Insufficient Data'};
     }
 
-    final riskScores = logs
-        .map((log) {
-          double anxiety = (log.anxietyLevel / 10.0).clamp(0.0, 1.0);
-          double mood = (1.0 - (log.moodScore / 10.0)).clamp(0.0, 1.0);
-          return (anxiety * 0.6 + mood * 0.4);
-        })
-        .toList()
-        .reversed
-        .toList();
+    // Oldest -> newest so a positive slope means risk is rising.
+    final riskScores = _riskSeriesNewestFirst(logs).reversed.toList();
+    if (riskScores.length < 2) {
+      return {'slope': 0.0, 'direction': 'Insufficient Data'};
+    }
 
     // Linear regression
     final n = riskScores.length;
@@ -169,36 +164,12 @@ class MLAnalysisService {
     return {'slope': slope, 'direction': direction};
   }
 
-  /// Detect anomalies using statistical methods (z-score)
+  /// Detect anomalies: delegates to MlAnomalyService's baseline rules (the
+  /// previous z-score used the OLDEST log as "latest" and anxietyLevel, which
+  /// the check-in never records).
   Map<String, dynamic> _detectAnomalies(List<DailyLog> logs) {
-    if (logs.length < 3) {
-      return {'detected': false, 'description': 'Insufficient data for anomaly detection'};
-    }
-
-    final anxietyValues =
-        logs.map((l) => l.anxietyLevel / 10.0).toList().reversed.toList();
-
-    final mean = _average(anxietyValues);
-    final stdDev = _standardDeviation(anxietyValues.toList());
-
-    if (stdDev == 0) {
-      return {'detected': false, 'description': 'All values are consistent'};
-    }
-
-    // Check if latest value is anomalous (z-score > 2)
-    final latestAnxiety = anxietyValues.first;
-    final zScore = (latestAnxiety - mean) / stdDev;
-
-    if (zScore.abs() > 2.0) {
-      return {
-        'detected': true,
-        'description': zScore > 0
-            ? 'Anxiety spike detected! This is unusually high for you.'
-            : 'Unusual calm detected - great improvement!'
-      };
-    }
-
-    return {'detected': false, 'description': 'Within normal range for your pattern'};
+    final result = MlAnomalyService.detectFromLogs(logs, now: DateTime.now());
+    return {'detected': result.anomalyDetected, 'description': result.description};
   }
 
   /// Detect patterns in data (e.g., weekly cycles)
@@ -216,8 +187,10 @@ class MLAnalysisService {
 
     for (var log in sortedLogs.take(14)) {
       final dayOfWeek = log.timestamp.weekday;
+      final anxiety = log.anxietyLevel;
+      if (anxiety == null || !anxiety.isFinite) continue; // not recorded
       dayOfWeekAnxiety.putIfAbsent(dayOfWeek, () => []);
-      dayOfWeekAnxiety[dayOfWeek]!.add(log.anxietyLevel / 10.0);
+      dayOfWeekAnxiety[dayOfWeek]!.add(anxiety / 10.0);
     }
 
     // Find days with highest average anxiety
@@ -247,16 +220,16 @@ class MLAnalysisService {
     }
 
     // Check for sleep pattern
-    final sleepValues = sortedLogs.take(7).map((l) => l.sleepHours / 12.0).toList();
+    final sleepValues = _vals(sortedLogs.take(7), (l) => l.sleepHours, 12.0);
     final avgSleep = _average(sleepValues);
 
-    if (avgSleep < 0.4) {
+    if (sleepValues.isNotEmpty && avgSleep < 0.4) {
       patterns.add('😴 Poor sleep pattern - may impact anxiety');
     }
 
     // Check for mood improvement
-    final recentMoods = sortedLogs.take(7).map((l) => l.moodScore / 10.0).toList();
-    if (recentMoods.first > recentMoods.last + 0.3) {
+    final recentMoods = _vals(sortedLogs.take(7), (l) => l.moodScore, 10.0);
+    if (recentMoods.length >= 2 && recentMoods.first > recentMoods.last + 0.3) {
       patterns.add('😊 Your mood is improving!');
     }
 
@@ -267,18 +240,12 @@ class MLAnalysisService {
   List<double> _predictNextWeek(List<DailyLog> logs) {
     if (logs.isEmpty) return [];
 
-    final riskScores = logs
-        .map((log) {
-          double anxiety = (log.anxietyLevel / 10.0).clamp(0.0, 1.0);
-          double mood = (1.0 - (log.moodScore / 10.0)).clamp(0.0, 1.0);
-          return (anxiety * 0.6 + mood * 0.4);
-        })
-        .toList()
-        .reversed
-        .toList();
+    final riskScores = _riskSeriesNewestFirst(logs);
+    if (riskScores.isEmpty) return [];
 
     final trendAnalysis = _analyzeTrend(logs);
     final slope = trendAnalysis['slope'] as double;
+    // Newest log (the old code reversed the list and extrapolated from the oldest).
     final lastRisk = riskScores.first;
 
     final prediction = <double>[];
@@ -294,9 +261,10 @@ class MLAnalysisService {
 
   /// Classify risk level based on score
   String _classifyRiskLevel(double score) {
-    if (score < 0.2) return 'Low';
-    if (score < 0.4) return 'Moderate';
-    if (score < 0.7) return 'High';
+    // Same bands as MlRiskService.riskLevelFor (25/50/75 on 0..100).
+    if (score < 0.25) return 'Low';
+    if (score < 0.5) return 'Moderate';
+    if (score < 0.75) return 'High';
     return 'Critical';
   }
 
@@ -307,14 +275,16 @@ class MLAnalysisService {
     bool anomalyDetected,
     List<String> patterns,
   ) {
-    if (riskScore > 0.7 && trendSlope > 0.02) {
-      return '⚠️ Your anxiety is increasing rapidly. Consider reaching out to your therapist.';
+    if (riskScore >= 0.75) {
+      return '⚠️ Recent check-ins are in the critical range. Please reach out to your therapist or a crisis line.';
+    } else if (riskScore > 0.6 && trendSlope > 0.02) {
+      return '⚠️ Your check-ins are getting worse quickly. Consider reaching out to your therapist.';
     } else if (riskScore > 0.6) {
-      return '💭 High anxiety detected. Try grounding techniques or mindfulness exercises.';
+      return '💭 Recent check-ins show high strain. Try grounding techniques and tell your therapist.';
     } else if (trendSlope > 0.02) {
-      return '📈 Your anxiety is trending upward. Monitor your stressors.';
+      return '📈 Your check-ins are trending worse. Monitor your stressors.';
     } else if (trendSlope < -0.02) {
-      return '✨ Great progress! Your anxiety is improving.';
+      return '✨ Great progress! Your check-ins are improving.';
     } else if (anomalyDetected) {
       return '🔔 Unusual pattern detected. Reflect on what might have caused this change.';
     } else if (patterns.isEmpty) {
@@ -325,6 +295,11 @@ class MLAnalysisService {
   }
 
   /// Helper: Calculate average
+  /// Recorded (non-null, finite) values of [f] divided by [div]; missing
+  /// values are skipped, never replaced by a default.
+  static List<double> _vals(Iterable<DailyLog> logs, double? Function(DailyLog) f, double div) =>
+      logs.map(f).whereType<double>().where((v) => v.isFinite).map((v) => v / div).toList();
+
   double _average(List<double> values) {
     if (values.isEmpty) return 0.0;
     return values.reduce((a, b) => a + b) / values.length;
@@ -342,13 +317,8 @@ class MLAnalysisService {
   double _calculateVolatility(List<DailyLog> logs) {
     if (logs.length < 2) return 0.0;
 
-    final riskScores = logs
-        .map((log) {
-          double anxiety = (log.anxietyLevel / 10.0).clamp(0.0, 1.0);
-          double mood = (1.0 - (log.moodScore / 10.0)).clamp(0.0, 1.0);
-          return (anxiety * 0.6 + mood * 0.4);
-        })
-        .toList();
+    final riskScores = _riskSeriesNewestFirst(logs);
+    if (riskScores.length < 2) return 0.0;
 
     double sumSquaredDiff = 0;
     for (int i = 1; i < riskScores.length; i++) {

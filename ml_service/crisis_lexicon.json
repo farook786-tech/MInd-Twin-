@@ -1,0 +1,485 @@
+{
+  "version": "2026.11.17-4",
+  "_doc": [
+    "SINGLE SOURCE OF TRUTH for MindTwin crisis phrase rules.",
+    "Consumed by ml_service/crisis_rules.py directly, and copied (by ml_service/tools/sync_crisis_lexicon.py) into",
+    "backend/src/routes/ml.js and lib/services/ml_sentiment_service.dart between GENERATED markers.",
+    "After editing this file run: python ml_service/tools/sync_crisis_lexicon.py  (CI: --check).",
+    "Matching contract (identical in Python, JS, Dart):",
+    "  normalize(text): lowercase; map curly quotes/backtick to an apostrophe then delete apostrophes (don't -> dont);",
+    "  replace every ASCII char that is not [a-z0-9] and the chars in 'extra_separators' with a space; collapse spaces; trim.",
+    "  A pattern P matches when the regex  (?:^| )(?:P)(?= |$)  is found in the normalized text.",
+    "  Patterns must not contain backslashes or apostrophes so they embed verbatim in JS and Dart raw strings.",
+    "hard: ALWAYS escalate (explicit/passive ideation, self-harm, method/plan). Never suppressed by idioms or negation.",
+    "soft: escalate for therapist review (hopelessness / burdensomeness). Never suppressed by idioms.",
+    "idiom: only suppresses a MODEL-ONLY escalation (no hard or soft phrase present).",
+    "negation: only annotates a hard hit (negation_present=true); it NEVER suppresses escalation (C-SSRS: any SI mention needs review).",
+    "model_threshold: model-only escalation fires at probability >= this (chosen 0.35 from the threshold sweep in docs/ML_SAFETY_EVALUATION.md; recall prioritised over precision)."
+  ],
+  "extra_separators": "“”…।॥–—¿¡",
+  "model_threshold": 0.35,
+  "hard": [
+    {
+      "id": "kill_myself",
+      "cat": "explicit",
+      "re": "kill+(s|ing|ed)? ?(my ?self|myslef|myslf|mself|meself|mysef)"
+    },
+    {
+      "id": "end_take_life",
+      "cat": "explicit",
+      "re": "(end|ending|ended|take|taking|took|takes) (my|my own|own) (life|lives)"
+    },
+    {
+      "id": "end_it_all",
+      "cat": "explicit",
+      "re": "end(ing)? (it|everything|things|this life|my existence)( all| now| tonight| today| for good| forever)?"
+    },
+    {
+      "id": "suicide_word",
+      "cat": "explicit",
+      "re": "(suicid|suicde|sucid|sucide|suiside|suisid|suicd)[a-z]*"
+    },
+    {
+      "id": "suicide_hinglish",
+      "cat": "hinglish",
+      "re": "(khud ?kushi|khud ?khushi|khudkhushi|aatma?hatya|atma?hatya|aatmhatya)[a-z]*"
+    },
+    {
+      "id": "want_to_die",
+      "cat": "explicit",
+      "re": "(wan+a|wan+t(s|ed|ing)?( to| 2)?|wnt( to)?|ready to|deserve to|deserves to|wish i could|wish to|longing to|like to|decided to|mind to|choose to|chosen to|trying to|try to|need to|plan to|planning to) die+"
+    },
+    {
+      "id": "want_dead",
+      "cat": "explicit",
+      "re": "(wan+a|want(s|ed|ing)? to|rather|better off|wish i (was|were|could be)|deserve to) (be )?dead"
+    },
+    {
+      "id": "not_want_live",
+      "cat": "explicit",
+      "re": "(dont|do not|didnt|no longer|never) (really |even |just )?(want|wanna|wish|feel like)( to)? (live|be alive|exist|go on living|keep living|stay alive|be here any ?more|be around any ?more|wake up)"
+    },
+    {
+      "id": "wont_be_here",
+      "cat": "explicit",
+      "re": "(wont|will not|not going to|not gonna) be (here|around|alive) (tomorrow|any ?more|much longer|for long)"
+    },
+    {
+      "id": "no_reason_live",
+      "cat": "explicit",
+      "re": "((reason|point|purpose|will) (to |in |of |for )?(me )?(even )?(live|living|being alive|be alive|go on|going on|stay alive|staying alive|existing|being here)|(nothing|no ?one|nobody|nothing left|no reason) to live for)"
+    },
+    {
+      "id": "life_not_worth",
+      "cat": "explicit",
+      "re": "((life|living) (isnt|is not|aint|is never|not) (even )?worth( living| it)?|not worth living)"
+    },
+    {
+      "id": "stop_existing",
+      "cat": "passive",
+      "re": "(stop|stopped|cease|ceasing|quit) (to )?(living|existing|exist|to live|being alive)"
+    },
+    {
+      "id": "wish_disappear",
+      "cat": "passive",
+      "re": "(wish (that )?i (could |would |did |can )?(just |simply )?(not exist|didnt exist|disappear|vanish|fade away|fade out|die|stop existing|cease to exist|sleep forever|never wake up|not wake up|be gone|go away forever|fall asleep forever)|(want|wanna|need) to (just )?(disappear|vanish|fade away|fade out|not exist|stop existing)|(disappear|vanish|run away|go away|leave) and never (come back|return|be found|wake up))"
+    },
+    {
+      "id": "disappear_forever",
+      "cat": "passive",
+      "re": "(disappear|vanish|go away|be gone|go|leave|sleep) (forever|for good)"
+    },
+    {
+      "id": "wish_hit_me",
+      "cat": "passive",
+      "re": "((wish|hope|pray)[a-z]* (that )?(a |the |some )?[a-z]+ (would |will |could )?(hit|hits|kill|kills|run over|runs over|end|ends|take|takes) me|favou?r (by|if) (dying|disappearing|leaving|being gone|i (died|disappeared|was gone|left)))"
+    },
+    {
+      "id": "never_wake",
+      "cat": "passive",
+      "re": "((hope|wish|want|pray)[a-z]* (that )?i (just )?(dont|do not|never|wont|wouldnt|would not|didnt) (ever )?wake up|(sleep|asleep) and (never|not|dont|wont) (ever )?wake up|never wake up again|not wake up tomorrow)"
+    },
+    {
+      "id": "better_off_without_me",
+      "cat": "passive",
+      "re": "(better|happier|easier|fine|okay|ok|better off|relieved|glad|free)( for [a-z]+)? (without me|if i (was|were|wasnt|werent|was not|were not|didnt|did not|died|disappeared|was dead|was gone|were gone|wasnt here|werent here|wasnt around|was not around|didnt exist|did not exist|never existed))"
+    },
+    {
+      "id": "nobody_would_miss",
+      "cat": "passive",
+      "re": "(no ?one|nobody|noone|no body) (would|will|is going to|gonna) (even )?(miss|notice|care)"
+    },
+    {
+      "id": "tired_of_living",
+      "cat": "passive",
+      "re": "(tired|sick|done|exhausted|fed up) (of|with) (living|being alive|life|existing|my life)"
+    },
+    {
+      "id": "give_up_life",
+      "cat": "passive",
+      "re": "give up on (life|living|my life)"
+    },
+    {
+      "id": "never_born",
+      "cat": "passive",
+      "re": "wish(ed)? i (had |was |were |wasnt |werent |hadnt )?(never )?(been )?born"
+    },
+    {
+      "id": "dont_deserve_live",
+      "cat": "passive",
+      "re": "((shouldnt|should not|dont deserve to|do not deserve to|not meant to) (be alive|live|exist)|deserve to die)"
+    },
+    {
+      "id": "death_thoughts",
+      "cat": "passive",
+      "re": "(think|thinking|thought|thoughts|picturing|imagining|imagine|fantasi[sz]ing|fantasi[sz]e|dreaming|dream)( a lot| constantly| always| often)? (about |of )?(death|dying|being dead|my death|my own death|my funeral|my own funeral|not being here)"
+    },
+    {
+      "id": "death_relief",
+      "cat": "passive",
+      "re": "(death|dying) (seems|feels|sounds|would be|will be|is) (so )?(peaceful|a relief|like a relief|relief|better|easier|nice|good|the answer|the only way|a mercy|mercy|a blessing|welcome|freedom|an escape)"
+    },
+    {
+      "id": "want_it_to_end",
+      "cat": "passive",
+      "re": "(want|wanna|wish|need)( it| this| everything| my life| life)?( all)? to (end|be over)( for good| forever| now)?"
+    },
+    {
+      "id": "pain_stop_forever",
+      "cat": "passive",
+      "re": "(want|need|wish) (the pain|it|this|everything) to (stop|end)( forever| for good)?"
+    },
+    {
+      "id": "over_for_good",
+      "cat": "passive",
+      "re": "(it|this|everything) (all )?(was|were|to be|is) (all )?over (for good|forever)"
+    },
+    {
+      "id": "cant_keep_living",
+      "cat": "passive",
+      "re": "(cant|cannot|can not) (keep|go on|continue) living"
+    },
+    {
+      "id": "live_or_die",
+      "cat": "passive",
+      "re": "((care|matter|mind)[a-z]* (if|whether) i (live|die|died|was dead|wake up)|live or die|mind (dying|being dead)|if i (died|was dead|were dead|didnt wake up|never woke up)|(okay|ok|fine|happy|alright) (with )?(not waking up|never waking up|dying|being dead))"
+    },
+    {
+      "id": "wish_die",
+      "cat": "passive",
+      "re": "(wish|hope|pray)[a-z]* (that )?i (would |could |will |might )?(die|be dead|get killed|not survive)"
+    },
+    {
+      "id": "goodbye_note",
+      "cat": "method_plan",
+      "re": "((goodbye|suicide|farewell) (note|letter|message)s?|(letter|letters|note|notes) .{0,40}goodbye|goodbye (everyone|everybody|all|world|forever)|(this is|its) my (goodbye|last message|final message))"
+    },
+    {
+      "id": "self_harm_word",
+      "cat": "self_harm",
+      "re": "(self ?harm|selfharm|self ?injur|self ?mutilat)[a-z]*"
+    },
+    {
+      "id": "harm_myself",
+      "cat": "self_harm",
+      "re": "(hurt|hurting|hurts|harm|harming|harmed|punish|punishing|injure|injured|injuring|cut|cutting|cuts|burn|burned|burnt|burning|hit|hitting|scratch|scratched|scratching|starve|starving|starved|poison|poisoning|drown|drowning|hang|hanging|hanged|shoot|shooting|stab|stabbing|choke|choking|off|offed|unalive|unaliving) ?(my ?self|myslef|myslf)"
+    },
+    {
+      "id": "cut_body",
+      "cat": "self_harm",
+      "re": "(cut|cutting|cuts|slit|slitting|slash|slashing|slice|slicing|burn|burning|burned|burnt|scratch|scratching|scratched) (my |both )?(wrist|wrists|arm|arms|thigh|thighs|leg|legs|vein|veins|skin|body)"
+    },
+    {
+      "id": "cuts_on_me",
+      "cat": "self_harm",
+      "re": "((fresh|new) (cuts|scars)|cuts on my|cuts i made|covered in (cuts|scars)|(urge|urges) to (cut|hurt|harm|self harm|burn)|(want|wanna|need|going) to (cut|burn|hurt) again|cutting( my ?self)? again|started cutting|until (they|it|i) (bled|bleed)|(bled|bleed|hurt|cut|burn[a-z]*|hit|punch[a-z]*|bruise[a-z]*) .{0,40}on purpose)"
+    },
+    {
+      "id": "blade_on_me",
+      "cat": "self_harm",
+      "re": "(razor|blade|blades|knife) .{0,40}(my ?self|my (arm|arms|wrist|wrists|thigh|thighs|leg|legs|skin))"
+    },
+    {
+      "id": "head_bang",
+      "cat": "self_harm",
+      "re": "(bang|banged|banging|hit|hitting|smash|smashed) my head (against|on|into)"
+    },
+    {
+      "id": "overdose",
+      "cat": "method_plan",
+      "re": "(overdos[a-z]*|od (on|tonight)|oding)"
+    },
+    {
+      "id": "pill_stockpile",
+      "cat": "method_plan",
+      "re": "((save|saved|saving|stockpil[a-z]*|hoard[a-z]*|collect[a-z]*|stash[a-z]*) (up )?(my |all my |the |these |enough )?(pills|meds|medication|medications|medicine|tablets|sleeping pills)|(pills|meds|tablets|medication) (saved|stockpiled|hidden|stashed))"
+    },
+    {
+      "id": "pill_swallow",
+      "cat": "method_plan",
+      "re": "((take|taking|took|swallow[a-z]*|down|downed) (all|a bunch|a handful|too many|the whole bottle|all of)( of)? (my |the |these |those )?(pills|meds|medication|tablets)|enough (pills|sleeping pills|meds|tablets) to)"
+    },
+    {
+      "id": "rope_noose",
+      "cat": "method_plan",
+      "re": "(noose|(bought|buy|buying|got|have|tied|tie|made) (a |the )?rope)"
+    },
+    {
+      "id": "jump_from",
+      "cat": "method_plan",
+      "re": "((jump|jumping|jumped|throw my ?self|leap|leaping) (off|from|in front of) (a |the |my )?(bridge|building|roof|rooftop|terrace|balcony|cliff|train|tower|window|bus|car|truck|metro)|(on|from) (the|a) (roof|terrace|bridge|balcony|ledge) .{0,30}(jump[a-z]*|end[a-z]*)|step(ping)? in front of (a |the )?(train|bus|car|truck|metro)|drive (my car |the car )?off (the|a) (road|bridge|cliff)|crash[a-z]* my car on purpose|(chosen|chose|picked) (the|a) (bridge|building|method|rope|spot to jump)|(building|bridge|roof|floor|drop|fall|cliff) (is |was )?(tall|high|deep) enough|(tall|high|deep) enough to (die|kill|end|jump))"
+    },
+    {
+      "id": "firearm",
+      "cat": "method_plan",
+      "re": "((gun|pistol|revolver)( is)? loaded|loaded( the)? (gun|pistol)|(gun|pistol) to my head|(bought|buy|got) a (gun|pistol))"
+    },
+    {
+      "id": "ways_to_die",
+      "cat": "method_plan",
+      "re": "((ways|way|how|methods?) to (die|kill my ?self|end (my|it)|commit)|(know|figured out|decided|planned|worked out) (exactly )?how (i would|i will|i am going to|im going to|i could|ill|id) do it)"
+    },
+    {
+      "id": "plan_and_date",
+      "cat": "method_plan",
+      "re": "((plan|date|time) (and|n) (a )?(date|time|method|way)|(plan|planning|planned|plans) (to|on|for) (kill|die|dying|end|hurt|jump|hang|overdose|take my))"
+    },
+    {
+      "id": "give_away_things",
+      "cat": "method_plan",
+      "re": "giv(e|ing|en) away (all )?(my|all my|of my) (things|stuff|belongings|possessions)"
+    },
+    {
+      "id": "slang",
+      "cat": "slang",
+      "re": "(kms|kys|k m s|unaliv[a-z]*|un alive|sewer ?slide|self ?delete|commit (die|sudoku|seppuku)|toaster bath)"
+    },
+    {
+      "id": "hi_mar_jaana",
+      "cat": "hinglish",
+      "re": "mar ja[a-z]*"
+    },
+    {
+      "id": "hi_marna",
+      "cat": "hinglish",
+      "re": "(marna (hai|chahta|chahti|chahte|he|h)|marne (ka|ki|ko|ke) (mann|man|mn|khayal|khyal|vichar|soch|iccha|ichha|dil|irada))"
+    },
+    {
+      "id": "hi_jeene_mann_nahi",
+      "cat": "hinglish",
+      "re": "(jeene|jine|jeeni|jeena|jina) (ka|ki|ko|ke) (koi )?(mann|man|mn|iccha|ichha|ichchha|wajah|vajah|matlab|maksad|fayda|faida|dil|reason|point)( bhi)? (nahi|nhi|nai|na|ni)"
+    },
+    {
+      "id": "hi_jeena_nahi",
+      "cat": "hinglish",
+      "re": "((jeena|jina|jeene) (nahi|nhi|nai|ni) (hai|chahta|chahti|chahte|he|h)|(zinda|jinda) (nahi|nhi|nai) (rehna|rahna|rehnaa)|zinda rehne ka (mann|man) (nahi|nhi)|(nahi|nhi) (rehna|rahna|jeena|jina) (chahta|chahti|chahte|hai)|duniya (mein|me|se) (nahi|nhi) rehna|duniya chhod[a-z]*)"
+    },
+    {
+      "id": "hi_khud_ko",
+      "cat": "hinglish",
+      "re": "khud ko (khatam|khatm|maar|mar|hurt|nuksan|nuksaan|chot|zakhmi|kaat|kat|jala)[a-z]*"
+    },
+    {
+      "id": "hi_sab_khatam",
+      "cat": "hinglish",
+      "re": "(sab|sabkuch|sab kuch|zindagi|jindagi|zindgi|life) (khatam|khatm|khtm) (kar|kr)"
+    },
+    {
+      "id": "hi_mere_bina",
+      "cat": "hinglish",
+      "re": "mere (bina|baad) (sab|sabhi|sabko|ghar wale|family|log)[a-z]* (khush|better|theek|thik|accha|achha|acche|ache|aaram)"
+    },
+    {
+      "id": "hi_zindagi_se_thak",
+      "cat": "hinglish",
+      "re": "(zindagi|jindagi|zindgi|life|jeene) se (thak|tang|bezaar|bezar)[a-z]*"
+    },
+    {
+      "id": "hi_gayab",
+      "cat": "hinglish",
+      "re": "gayab ho (ja|jaa)[a-z]*"
+    },
+    {
+      "id": "hi_paida_na",
+      "cat": "hinglish",
+      "re": "(kaash|kash) (main |mai |me |mein )?(paida|peda) (hi )?(na|nahi|nhi)"
+    },
+    {
+      "id": "hi_na_uthu",
+      "cat": "hinglish",
+      "re": "(kabhi|phir|fir|wapas|dobara) (na|nahi|nhi) (uth|jaag|jag)[a-z]*"
+    },
+    {
+      "id": "hi_jaan_de",
+      "cat": "hinglish",
+      "re": "((apni|meri) (jaan|jan) (de|le|dena|lena|dedu|ledu)[a-z]*|(jaan|jan) (dene|lene) (ka|ki|ko|ke))"
+    },
+    {
+      "id": "hi_devanagari",
+      "cat": "hinglish",
+      "re": "(मर जा[^ ]*|मरना[^ ]*|मरने [^ ]*|जीने का मन नही[^ ]*|जीना नही[^ ]*|आत्महत्या[^ ]*|खुदकुशी[^ ]*|ख़ुदकुशी[^ ]*|ख़ुदकुशी[^ ]*|खुद को (मार|खत्म|ख़त्म)[^ ]*)"
+    },
+    {
+      "id": "cant_stay_alive",
+      "cat": "explicit",
+      "re": "(cant|cannot|can not|dont think i can|not sure i can) (stay|keep|remain) (alive|living|going)"
+    },
+    {
+      "id": "better_off_not_existing",
+      "cat": "passive",
+      "re": "(better off|rather) (not existing|not alive|not be alive|not being alive|not exist|not live|not be here|not being here|gone|be gone|never born|never existed)"
+    },
+    {
+      "id": "want_feel_pain",
+      "cat": "self_harm",
+      "re": "((want|need|wanted|needed) to feel (physical )?pain|so i (cut|burn|burned|cutted))"
+    },
+    {
+      "id": "poison_method",
+      "cat": "method_plan",
+      "re": "(rat poison|pesticide|insecticide|keetnashak|zeh?e?r (kha|pi|pee)[a-z]*|jah?a?r (kha|pi|pee)[a-z]*|sulphas|celphos|drink(ing)? bleach)"
+    },
+    {
+      "id": "count_pills_will",
+      "cat": "method_plan",
+      "re": "((counted|count|counting) (my |the |all my )?(pills|meds|tablets|medication)|(wrote|write|writing|made|updated) (my |a )?will)"
+    },
+    {
+      "id": "slang_obfuscated",
+      "cat": "slang",
+      "re": "(wan+a|want to|want 2|wnt to) (d e|d1e|dy|ded|d13)"
+    },
+    {
+      "id": "hi_hamesha",
+      "cat": "hinglish",
+      "re": "((ja|jaa|so|chala|chali|khatam|gayab)[a-z]* .{0,25}hamesha ke liye|hamesha ke liye (so|ja|chala|chali|khatam|gayab)[a-z]*)"
+    },
+    {
+      "id": "hi_khatam_ho",
+      "cat": "hinglish",
+      "re": "((main|mai|mujhe|mujko|khud) khatam ho (ja|jaa)[a-z]*|khatam ho (jaana|jana) (hai|chahta|chahti))"
+    },
+    {
+      "id": "waste_of_space",
+      "cat": "passive",
+      "re": "(waste of (space|oxygen|air|life)|shouldnt exist|should not exist)"
+    }
+  ],
+  "soft": [
+    {
+      "id": "hopeless",
+      "cat": "hopelessness",
+      "re": "(hopeless[a-z]*|no hope|(lost|lose|losing) (all )?hope)"
+    },
+    {
+      "id": "pointless",
+      "cat": "hopelessness",
+      "re": "((nothing|life|everything|it all) (is |feels |seems )?(so )?(pointless|meaningless|hopeless)|nothing matters)"
+    },
+    {
+      "id": "cant_go_on",
+      "cat": "hopelessness",
+      "re": "(cant|cannot|can not) (do this|take (it|this)|go on|handle (it|this)|cope|keep going)( any ?more| like this)"
+    },
+    {
+      "id": "trapped",
+      "cat": "hopelessness",
+      "re": "(no way out|no escape|(feel|feeling|am|im) trapped)"
+    },
+    {
+      "id": "burden",
+      "cat": "hopelessness",
+      "re": "((im|i am|feel like|feel like i am|feel like im) (a |such a |just a )?burden|bojh)"
+    },
+    {
+      "id": "worthless",
+      "cat": "hopelessness",
+      "re": "worthless"
+    },
+    {
+      "id": "never_better",
+      "cat": "hopelessness",
+      "re": "((nothing|never) (will |is going to )?(ever )?(get|getting) better|never (going to|gonna) be happy)"
+    },
+    {
+      "id": "nothing_left",
+      "cat": "hopelessness",
+      "re": "(nothing left|tired of fighting|no ?one cares|nobody cares|nobody loves me|no ?one loves me)"
+    },
+    {
+      "id": "giving_up",
+      "cat": "hopelessness",
+      "re": "(give up on everything|giving up|want to give up)"
+    },
+    {
+      "id": "drowning",
+      "cat": "hopelessness",
+      "re": "(im|i am) drowning"
+    },
+    {
+      "id": "just_kill_me",
+      "cat": "hopelessness",
+      "re": "(just kill me|(i|im|i am) going to die)"
+    },
+    {
+      "id": "hi_hopeless",
+      "cat": "hopelessness",
+      "re": "((koi )?(umeed|ummeed|umid) (nahi|nhi)|sab (bekaar|bekar)|kuch nahi badlega|kuch theek nahi (hoga|ho raha))"
+    }
+  ],
+  "idiom": [
+    {
+      "id": "dying_laugh",
+      "re": "(dying|die|died|dead) (of |from )?(laugh[a-z]*|laughter)"
+    },
+    {
+      "id": "killing_me",
+      "re": "(killing|killed|kills|kill) me( lol| haha)?"
+    },
+    {
+      "id": "kill_for",
+      "re": "(would|could) kill for"
+    },
+    {
+      "id": "dead_tired",
+      "re": "dead (tired|serious|beat|on|wrong|right)"
+    },
+    {
+      "id": "to_die_for",
+      "re": "to die for"
+    },
+    {
+      "id": "killed_it",
+      "re": "(killed|killing|kill) (it|that|the [a-z]+)"
+    },
+    {
+      "id": "dying_to",
+      "re": "dying to (see|know|try|meet|go|hear|get|watch|eat)"
+    },
+    {
+      "id": "kill_time",
+      "re": "kill (some )?time"
+    },
+    {
+      "id": "device_died",
+      "re": "(phone|battery|laptop|car|plant|plants) (is |was )?(dead|died|dies)"
+    },
+    {
+      "id": "died_of",
+      "re": "(died|die|dying) of (embarrassment|boredom|shame|cringe)"
+    },
+    {
+      "id": "drop_dead",
+      "re": "(drop dead|die hard|died down|death of me)"
+    },
+    {
+      "id": "going_to_kill_me",
+      "re": "(is|are|gonna|going to) kill me"
+    },
+    {
+      "id": "hi_idiom",
+      "re": "((has|hans) (has|hans) ke mar|(bhook|bhukh|garmi|thand) se mar)"
+    }
+  ],
+  "negation_cues": "(not|never|dont|do not|wont|will not|wouldnt|would not|didnt|isnt|no|im not|i am not)"
+}

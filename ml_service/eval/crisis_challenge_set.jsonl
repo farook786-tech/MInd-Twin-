@@ -1,0 +1,79 @@
+{"c":"explicit_si","y":1,"t":"I'm going to end my own life"}
+{"c":"explicit_si","y":1,"t":"Honestly I just want to stop being alive"}
+{"c":"explicit_si","y":1,"t":"I keep picturing my own death and I want it"}
+{"c":"explicit_si","y":1,"t":"I've been having thoughts of killing myself"}
+{"c":"explicit_si","y":1,"t":"I am so close to taking my life"}
+{"c":"explicit_si","y":1,"t":"I want to die so badly"}
+{"c":"explicit_si","y":1,"t":"I'm thinking of committing suicide"}
+{"c":"explicit_si","y":1,"t":"I just don't want to live like this or at all"}
+{"c":"explicit_si","y":1,"t":"Tonight's the night I end things"}
+{"c":"explicit_si","y":1,"t":"I've made up my mind to die"}
+{"c":"explicit_si","y":1,"t":"i'm going to end it tonight"}
+{"c":"explicit_si","y":1,"t":"I wish to end my existence"}
+{"c":"passive_si","y":1,"t":"I wish I could go to sleep forever"}
+{"c":"passive_si","y":1,"t":"People would be relieved if I was gone"}
+{"c":"passive_si","y":1,"t":"I'd be doing everyone a favour by disappearing"}
+{"c":"passive_si","y":1,"t":"I wish I didn't exist"}
+{"c":"passive_si","y":1,"t":"I don't want to wake up tomorrow"}
+{"c":"passive_si","y":1,"t":"If I died tomorrow it would be fine"}
+{"c":"passive_si","y":1,"t":"I'd be okay with not waking up"}
+{"c":"passive_si","y":1,"t":"I want to disappear and never come back"}
+{"c":"passive_si","y":1,"t":"My kids would be better off without me around"}
+{"c":"passive_si","y":1,"t":"I hope something kills me"}
+{"c":"passive_si","y":1,"t":"There's no point living anymore"}
+{"c":"passive_si","y":1,"t":"I feel like ending everything"}
+{"c":"passive_si","y":1,"t":"Nobody would care if I died"}
+{"c":"passive_si","y":1,"t":"I don't want to be here any more"}
+{"c":"self_harm","y":1,"t":"I hurt myself again last night"}
+{"c":"self_harm","y":1,"t":"I've been burning my skin with cigarettes"}
+{"c":"self_harm","y":1,"t":"I want to cut again"}
+{"c":"self_harm","y":1,"t":"I punched the wall until my knuckles bled on purpose"}
+{"c":"self_harm","y":1,"t":"my arms are covered in cuts I made"}
+{"c":"self_harm","y":1,"t":"I've been harming myself to cope"}
+{"c":"method_plan","y":1,"t":"I have pills saved for when I'm ready"}
+{"c":"method_plan","y":1,"t":"I looked up how to tie a noose"}
+{"c":"method_plan","y":1,"t":"I've chosen the bridge"}
+{"c":"method_plan","y":1,"t":"I'm going to take the whole bottle of pills"}
+{"c":"method_plan","y":1,"t":"I know exactly how I would do it"}
+{"c":"method_plan","y":1,"t":"I've been checking which building is tall enough"}
+{"c":"slang_si","y":1,"t":"lowkey want to unalive"}
+{"c":"slang_si","y":1,"t":"gonna kms tbh"}
+{"c":"slang_si","y":1,"t":"i wanna dieee"}
+{"c":"slang_si","y":1,"t":"im gonna kill myslf"}
+{"c":"slang_si","y":1,"t":"suicidal af rn"}
+{"c":"slang_si","y":1,"t":"i want to die fr fr"}
+{"c":"hinglish_si","y":1,"t":"mujhe jeena nahi hai"}
+{"c":"hinglish_si","y":1,"t":"main suicide karna chahta hoon"}
+{"c":"hinglish_si","y":1,"t":"mar jaunga main"}
+{"c":"hinglish_si","y":1,"t":"khud ko khatam karne ka mann hai"}
+{"c":"hinglish_si","y":1,"t":"jeene ka koi matlab nahi"}
+{"c":"hinglish_si","y":1,"t":"zindagi se tang aa gaya hoon, sab khatam karna hai"}
+{"c":"hinglish_si","y":1,"t":"main nahi rehna chahta is duniya mein"}
+{"c":"hinglish_si","y":1,"t":"bas mar jaana hai"}
+{"c":"hinglish_si","y":1,"t":"aatmhatya kar lunga"}
+{"c":"hinglish_si","y":1,"t":"मुझे मरना है"}
+{"c":"negated_si","y":1,"t":"I'm not going to hurt myself, I just think about it"}
+{"c":"negated_si","y":1,"t":"I wouldn't actually kill myself"}
+{"c":"negated_si","y":1,"t":"it's not like I want to die, I just want to sleep for a long time"}
+{"c":"hopelessness","y":1,"t":"There's nothing to live for"}
+{"c":"hopelessness","y":1,"t":"I feel so hopeless about the future"}
+{"c":"hopelessness","y":1,"t":"I can't cope anymore"}
+{"c":"idiom","y":0,"t":"This assignment is literally killing me"}
+{"c":"idiom","y":0,"t":"I laughed so hard I nearly died"}
+{"c":"idiom","y":0,"t":"Dying to try that new cafe"}
+{"c":"idiom","y":0,"t":"He's dead set on moving to Bangalore"}
+{"c":"idiom","y":0,"t":"I'm killing it at work this week"}
+{"c":"idiom","y":0,"t":"My laptop died during the exam"}
+{"c":"idiom","y":0,"t":"The match was a killer"}
+{"c":"neutral","y":0,"t":"I had a long day but I'm okay"}
+{"c":"neutral","y":0,"t":"I need to take my pills at 9"}
+{"c":"neutral","y":0,"t":"I went to the bridge to watch the sunset"}
+{"c":"neutral","y":0,"t":"Saying goodbye to my college friends was hard"}
+{"c":"neutral","y":0,"t":"I'm stressed about deadlines"}
+{"c":"neutral","y":0,"t":"Feeling low but I called my mom"}
+{"c":"neutral","y":0,"t":"aaj bahut thakaan hai"}
+{"c":"neutral","y":0,"t":"I'm planning to end my subscription"}
+{"c":"positive","y":0,"t":"I'm happy to be alive today"}
+{"c":"positive","y":0,"t":"Life is worth living again"}
+{"c":"positive","y":0,"t":"mujhe aaj bahut accha lag raha hai"}
+{"c":"positive","y":0,"t":"Therapy is helping a lot"}

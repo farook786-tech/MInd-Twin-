@@ -23,13 +23,18 @@ class ClinicalService {
       throw new Error('PHQ-9 requires exactly 9 responses (0-3 each)');
     }
 
-    const score = responses.reduce((sum, val) => {
-      const num = parseInt(val);
-      if (isNaN(num) || num < 0 || num > 3) {
-        throw new Error('Each response must be 0-3');
+    // Strict integer 0-3 per item. The old parseInt() silently accepted
+    // 2.7 -> 2, "3abc" -> 3; null/true/'' must never be coerced to a score.
+    const items = responses.map((val, i) => {
+      let num = NaN;
+      if (typeof val === 'number') num = val;
+      else if (typeof val === 'string' && /^\s*[0-3]\s*$/.test(val)) num = Number(val);
+      if (!Number.isInteger(num) || num < 0 || num > 3) {
+        throw new Error(`Each response must be an integer 0-3 (item ${i + 1})`);
       }
-      return sum + num;
-    }, 0);
+      return num;
+    });
+    const score = items.reduce((sum, num) => sum + num, 0);
 
     // Clinical severity classification
     let severity = 'minimal';
@@ -38,10 +43,19 @@ class ClinicalService {
     else if (score >= 10) severity = 'moderate';
     else if (score >= 5) severity = 'mild';
 
+    // Item 9 ("thoughts that you would be better off dead or of hurting
+    // yourself"): ANY non-zero answer requires a same-day safety assessment
+    // regardless of the total score (Kroenke 2001; PHQ-9 instructions).
+    const item9 = items[8];
+    const suicidalIdeation = item9 > 0;
+
     return {
       score,
       severity,
       interpretation: this._getPHQ9Interpretation(score),
+      item9,
+      suicidalIdeation,
+      requiresSafetyAssessment: suicidalIdeation,
     };
   }
 
@@ -67,7 +81,7 @@ class ClinicalService {
    * Create PHQ-9 Assessment (Hospital-Grade)
    */
   async createPHQ9Assessment(patientId, therapistId, responses, notes = '') {
-    const { score, severity, interpretation } = this.scorePHQ9(responses);
+    const { score, severity, interpretation, item9, suicidalIdeation } = this.scorePHQ9(responses);
 
     // Check if this is baseline assessment
     const existingAssessments = this.db.prepare(`
@@ -107,6 +121,20 @@ class ClinicalService {
       await this.calculateTreatmentResponse(patientId, assessmentId, score);
     }
 
+    // Item 9 > 0 ALWAYS raises a critical alert for the therapist, even when
+    // the total is minimal (e.g. 0+0+...+1 = 1). Decision support only: the
+    // therapist performs the safety assessment.
+    if (suicidalIdeation) {
+      await this.createClinicalAlert(
+        patientId,
+        therapistId,
+        'PHQ9_ITEM9_SUICIDAL_IDEATION',
+        'critical',
+        `PHQ-9 item 9 answered ${item9}/3 (thoughts of being better off dead or self-harm). Same-day safety assessment required.`,
+        item9
+      );
+    }
+
     // Generate alert if severe symptoms
     if (score >= 15) {
       await this.createClinicalAlert(
@@ -125,6 +153,9 @@ class ClinicalService {
       severity,
       interpretation,
       isBaseline,
+      item9,
+      suicidalIdeation,
+      requiresSafetyAssessment: suicidalIdeation,
     };
   }
 
@@ -188,7 +219,7 @@ class ClinicalService {
 
       await this.createClinicalAlert(
         patientId,
-        therapist.therapist_id,
+        therapist ? therapist.therapist_id : null,
         'TREATMENT_NON_RESPONSE',
         'high',
         `Patient not showing adequate treatment response after ${weeksPassed} weeks. Consider intervention adjustment.`,
@@ -368,7 +399,7 @@ class ClinicalService {
 
     // Recent PHQ-9 assessment
     const latestPHQ9 = this.db.prepare(`
-      SELECT score FROM phq9_assessments
+      SELECT score, responses FROM phq9_assessments
       WHERE patient_id = ?
       ORDER BY assessment_date DESC LIMIT 1
     `).get(patientId);
@@ -376,6 +407,16 @@ class ClinicalService {
     if (latestPHQ9 && latestPHQ9.score >= 20) {
       riskFactors.push('severe_depression_symptoms');
       severity += 25;
+    } else if (latestPHQ9 && latestPHQ9.score >= 15) {
+      riskFactors.push('moderately_severe_depression_symptoms');
+      severity += 15;
+    }
+
+    // PHQ-9 item 9 > 0 forces at least "high" regardless of other factors.
+    const latestResponses = this._asArray(latestPHQ9 && latestPHQ9.responses);
+    if (latestResponses && Number(latestResponses[8]) > 0) {
+      riskFactors.push('phq9_item9_suicidal_ideation');
+      severity = Math.max(severity + 25, 41);
     }
 
     const riskLevel = severity > 60 ? 'critical' : severity > 40 ? 'high' : severity > 20 ? 'moderate' : 'low';
@@ -519,6 +560,19 @@ class ClinicalService {
    * Returns the value itself for objects so callers never crash on
    * JSON.parse of a non-string.
    */
+  _asArray(value) {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : null;
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   _asObject(value) {
     if (value == null) return null;
     if (typeof value === 'string') {
