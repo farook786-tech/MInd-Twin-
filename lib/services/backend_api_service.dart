@@ -1,4 +1,5 @@
 ﻿import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
@@ -18,13 +19,9 @@ class BackendApiService {
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   late final TokenService _tokenService;
-  String? _resolvedBaseUrl;
-  
+
   BackendApiService() {
     _tokenService = TokenService();
-    if (_baseUrl.isNotEmpty) {
-      _resolvedBaseUrl = _baseUrl;
-    }
   }
 
   bool get isConfigured => (_resolvedBaseUrl ?? _baseUrl).isNotEmpty;
@@ -71,19 +68,126 @@ class BackendApiService {
     return prefs.getString(_manualBaseUrlKey);
   }
 
+  // ── Backend URL resolution ──────────────────────────────────────────────
+  //
+  // The resolved URL is shared by every BackendApiService instance (screens
+  // create their own instances), so resolution happens once per app session
+  // rather than once per screen.
+  static String? _resolvedBaseUrl;
+  static DateTime? _resolvedAt;
+  static DateTime? _lastFailedResolutionAt;
+  static Future<String?>? _inflightResolution;
+
+  /// How long a working URL is trusted before it is re-checked. Keeps the
+  /// app recovering on its own when the laptop's Wi-Fi IP changes.
+  static const Duration _revalidateAfter = Duration(seconds: 30);
+
+  /// After a failed resolution, callers get null immediately for this long
+  /// instead of each paying the full probe cost while the backend is down.
+  static const Duration _failureBackoff = Duration(seconds: 10);
+
+  static const int _discoveryPort = 47777;
+  static const String _discoveryRequest = 'MINDTWIN_DISCOVER_V1';
+
   Future<bool> testConnection({String? baseUrl}) async {
     final candidate = baseUrl == null || baseUrl.trim().isEmpty
         ? await _resolveBaseUrl()
         : _normalizeBaseUrl(baseUrl);
     if (candidate == null) return false;
+    return _probeHealth(candidate);
+  }
 
+  /// True only when [baseUrl] answers /health as a MindTwin backend.
+  Future<bool> _probeHealth(String baseUrl) async {
     try {
       final response = await http
-          .get(Uri.parse('$candidate/health'))
+          .get(Uri.parse('$baseUrl/health'))
           .timeout(const Duration(seconds: 3));
-      return response.statusCode >= 200 && response.statusCode < 300;
+      if (response.statusCode < 200 || response.statusCode >= 300) return false;
+      final body = jsonDecode(response.body);
+      if (body is! Map) return false;
+      // Older backends report only {status: ok}; newer ones also name the service.
+      final service = body['service'];
+      return body['status'] == 'ok' &&
+          (service == null || service == 'mindtwin-backend');
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Finds the backend on the local Wi-Fi by UDP broadcast. The backend's
+  /// LanDiscoveryService replies with its HTTP port; the reply's source
+  /// address is the laptop's current IP. Returns null when nothing answers
+  /// (different network, or Wi-Fi with client isolation).
+  Future<String?> _discoverViaBroadcast() async {
+    if (kIsWeb) return null;
+
+    RawDatagramSocket? socket;
+    try {
+      socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      socket.broadcastEnabled = true;
+
+      final found = Completer<String?>();
+      final boundSocket = socket;
+      boundSocket.listen((event) {
+        if (event != RawSocketEvent.read) return;
+        final datagram = boundSocket.receive();
+        if (datagram == null) return;
+        try {
+          final data = jsonDecode(utf8.decode(datagram.data));
+          if (data is Map && data['service'] == 'mindtwin-backend') {
+            final port = (data['port'] as num?)?.toInt() ?? 5000;
+            if (!found.isCompleted) {
+              found.complete('http://${datagram.address.address}:$port');
+            }
+          }
+        } catch (_) {
+          // Ignore unrelated datagrams.
+        }
+      });
+
+      final targets = <InternetAddress>{InternetAddress('255.255.255.255')};
+      try {
+        final interfaces = await NetworkInterface.list(
+          type: InternetAddressType.IPv4,
+          includeLoopback: false,
+        );
+        for (final interface in interfaces) {
+          for (final addr in interface.addresses) {
+            final octets = addr.address.split('.');
+            if (octets.length == 4) {
+              // Directed /24 broadcast; some routers drop 255.255.255.255.
+              targets.add(InternetAddress('${octets[0]}.${octets[1]}.${octets[2]}.255'));
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Network interface enumeration failed: $e');
+      }
+
+      final payload = utf8.encode(_discoveryRequest);
+      // UDP is lossy on Wi-Fi: send a few rounds, stop as soon as one answers.
+      for (var round = 0; round < 3 && !found.isCompleted; round++) {
+        for (final target in targets) {
+          try {
+            boundSocket.send(payload, target, _discoveryPort);
+          } catch (_) {}
+        }
+        await Future.any([
+          found.future,
+          Future.delayed(const Duration(milliseconds: 700)),
+        ]);
+      }
+
+      if (!found.isCompleted) return null;
+      final url = await found.future;
+      if (url != null && await _probeHealth(url)) return url;
+      return null;
+    } catch (e) {
+      debugPrint('LAN discovery failed: $e');
+      return null;
+    } finally {
+      socket?.close();
     }
   }
 
@@ -94,71 +198,26 @@ class BackendApiService {
     return detected;
   }
 
+  /// Locates a reachable backend without touching the saved manual URL.
+  /// Returns null when none is reachable; never guesses `localhost`, which
+  /// on a physical phone is the phone itself.
   Future<String?> autoDetectLanBackendUrl({int port = 5000}) async {
     if (kIsWeb) return null;
 
-    final preferred = <String>[];
-    final known = [
-      'http://10.0.2.2:$port',
-      'http://127.0.0.1:$port',
-      'http://localhost:$port',
-    ];
+    final discovered = await _discoverViaBroadcast();
+    if (discovered != null) {
+      _cacheResolved(discovered);
+      return discovered;
+    }
 
-    final manual = await getManualBaseUrl();
-    if (manual != null) preferred.add(manual);
-    if (_baseUrl.isNotEmpty) preferred.add(_baseUrl);
-    preferred.addAll(known);
-
-    for (final candidate in preferred.toSet()) {
-      if (await testConnection(baseUrl: candidate)) {
-        _resolvedBaseUrl = candidate;
+    // Emulator host alias and same-device backends (desktop builds, adb reverse).
+    for (final candidate in ['http://10.0.2.2:$port', 'http://127.0.0.1:$port']) {
+      if (await _probeHealth(candidate)) {
+        _cacheResolved(candidate);
         return candidate;
       }
     }
-
-    final candidates = <String>{};
-
-    try {
-      final interfaces = await NetworkInterface.list(
-        type: InternetAddressType.IPv4,
-        includeLoopback: false,
-      );
-
-      // Only test the device's own assigned addresses, never sweep the subnet.
-      for (final interface in interfaces) {
-        for (final addr in interface.addresses) {
-          final ip = addr.address;
-          if (ip.startsWith('127.')) continue;
-          candidates.add('http://$ip:$port');
-        }
-      }
-    } catch (e) {
-      debugPrint('Network interface enumeration failed: $e');
-    }
-
-    final candidateList = candidates.toList();
-    const batchSize = 24;
-    for (int i = 0; i < candidateList.length; i += batchSize) {
-      final end = (i + batchSize < candidateList.length)
-          ? i + batchSize
-          : candidateList.length;
-      final batch = candidateList.sublist(i, end);
-
-      final results = await Future.wait(
-        batch.map((url) async => MapEntry(url, await testConnection(baseUrl: url))),
-      );
-
-      for (final result in results) {
-        if (result.value) {
-          _resolvedBaseUrl = result.key;
-          return result.key;
-        }
-      }
-    }
-
-    // Fallback URL when backend not configured
-    _resolvedBaseUrl = 'http://localhost:5000';
-    return _resolvedBaseUrl;
+    return null;
   }
 
   Future<String?> resolveBaseUrl() => _resolveBaseUrl();
@@ -171,41 +230,81 @@ class BackendApiService {
     return normalized;
   }
 
-  Future<String?> _resolveBaseUrl() async {
-    if (_resolvedBaseUrl != null && _resolvedBaseUrl!.isNotEmpty) {
-      return _resolvedBaseUrl;
-    }
+  void _cacheResolved(String url) {
+    _resolvedBaseUrl = url;
+    _resolvedAt = DateTime.now();
+    _lastFailedResolutionAt = null;
+  }
 
+  Future<String?> _resolveBaseUrl() {
+    final cached = _resolvedBaseUrl;
+    final at = _resolvedAt;
+    if (cached != null && at != null &&
+        DateTime.now().difference(at) < _revalidateAfter) {
+      return Future.value(cached);
+    }
+    final failedAt = _lastFailedResolutionAt;
+    if (cached == null && failedAt != null &&
+        DateTime.now().difference(failedAt) < _failureBackoff) {
+      return Future.value(null);
+    }
+    // Concurrent callers share one resolution instead of each probing.
+    return _inflightResolution ??=
+        _resolveBaseUrlUncached().whenComplete(() => _inflightResolution = null);
+  }
+
+  Future<String?> _resolveBaseUrlUncached() async {
+    // 1. Re-validate the URL that worked last time (cheap, usual case).
+    final previous = _resolvedBaseUrl;
+    if (previous != null && await _probeHealth(previous)) {
+      _cacheResolved(previous);
+      return previous;
+    }
+    _resolvedBaseUrl = null;
+    _resolvedAt = null;
+
+    // 2. URL the user saved in settings.
     final manual = await getManualBaseUrl();
-    if (manual != null) {
-      final ok = await testConnection(baseUrl: manual);
-      if (ok) {
-        _resolvedBaseUrl = manual;
-        return _resolvedBaseUrl;
+    if (manual != null && await _probeHealth(manual)) {
+      _cacheResolved(manual);
+      return manual;
+    }
+
+    // 3. URL baked in at build time (--dart-define=MINDTWIN_API_BASE_URL=...).
+    if (_baseUrl.isNotEmpty && await _probeHealth(_normalizeBaseUrl(_baseUrl))) {
+      final url = _normalizeBaseUrl(_baseUrl);
+      _cacheResolved(url);
+      return url;
+    }
+
+    // 4. Find the laptop on the current Wi-Fi. If the saved URL went stale
+    //    (laptop got a new IP), replace it so the next launch is instant.
+    if (!kIsWeb) {
+      final discovered = await _discoverViaBroadcast();
+      if (discovered != null) {
+        if (manual != null && manual != discovered) {
+          await _storeManualBaseUrl(discovered);
+        }
+        _cacheResolved(discovered);
+        return discovered;
       }
     }
 
-    if (_baseUrl.isNotEmpty) {
-      final ok = await testConnection(baseUrl: _baseUrl);
-      if (ok) {
-        _resolvedBaseUrl = _baseUrl;
-        return _resolvedBaseUrl;
-      }
-    }
-
-    const localCandidates = [
+    // 5. Same-machine / emulator backends.
+    final localCandidates = [
       'http://localhost:5000',
       'http://127.0.0.1:5000',
       if (!kIsWeb) 'http://10.0.2.2:5000',
     ];
     for (final candidate in localCandidates) {
-      final ok = await testConnection(baseUrl: candidate);
-      if (ok) {
-        _resolvedBaseUrl = candidate;
-        return _resolvedBaseUrl;
+      if (await _probeHealth(candidate)) {
+        _cacheResolved(candidate);
+        return candidate;
       }
     }
 
+    _lastFailedResolutionAt = DateTime.now();
+    debugPrint('MindTwin backend not reachable (manual, build-time, LAN discovery, local all failed).');
     return null;
   }
 
@@ -270,9 +369,11 @@ class BackendApiService {
   /// Exchange a Firebase sign-in for a backend JWT (and sync the account).
   /// Returns the backend response { success, token, userId, role, name, email }
   /// or { success: false, message } when the backend is unreachable.
+  ///
+  /// [idToken] is the signed-in user's Firebase ID token; the backend verifies
+  /// it and derives uid/email from it, so identity cannot be spoofed.
   Future<Map<String, dynamic>> firebaseSync({
-    required String uid,
-    required String email,
+    required String idToken,
     String? name,
     String? role,
   }) async {
@@ -282,16 +383,19 @@ class BackendApiService {
     }
 
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/firebase-sync'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'uid': uid,
-          'email': email,
-          'name': name,
-          'role': role,
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/auth/firebase-sync'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $idToken',
+            },
+            body: jsonEncode({
+              'name': name,
+              'role': role,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);

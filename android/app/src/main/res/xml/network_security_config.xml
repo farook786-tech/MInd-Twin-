@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 9+ blocks plain-HTTP by default. The MindTwin backend can run on
+  a laptop on the same Wi-Fi (http://<laptop-lan-ip>:5000), whose address is
+  DHCP-assigned and found at runtime via LAN discovery, so it cannot be
+  listed as a fixed domain here. Cleartext is therefore permitted; system
+  CAs remain trusted for HTTPS.
+
+  When the backend is deployed behind HTTPS only, set
+  cleartextTrafficPermitted="false" to enforce TLS for all traffic.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

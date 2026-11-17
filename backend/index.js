@@ -17,6 +17,7 @@ const realtimeRoutes = require('./src/routes/realtime');
 const chatRoutes = require('./src/routes/chat');
 const TokenBucketMiddleware = require('./src/middleware/TokenBucketMiddleware');
 const { verifyAiProviders } = require('./src/config/aiModels');
+const { startLanDiscovery, lanAddresses } = require('./src/services/LanDiscoveryService');
 
 let mlRoutes = null;
 let geminiRoutes = null;
@@ -112,6 +113,9 @@ app.use('/api/realtime', realtimeRoutes);
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
+    // Lets clients confirm they reached a MindTwin backend, not some other
+    // service that happens to answer /health on the same port.
+    service: 'mindtwin-backend',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV
   });
@@ -135,11 +139,18 @@ app.use((req, res) => {
 });
 
 // Start server
+// The HTTP port can shift if BASE_PORT is busy, so discovery replies read it lazily.
+let activeHttpPort = null;
+
 const startServer = (port = BASE_PORT, attempt = 1) => {
-  const server = app.listen(port, () => {
+  const server = app.listen(port, '0.0.0.0', () => {
+    activeHttpPort = port;
     console.log(`🚀 MindTwin Backend running on port ${port}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV}`);
     console.log(`🔌 Database: ${process.env.DATABASE}`);
+    for (const { name, address } of lanAddresses()) {
+      console.log(`📱 Phones on the same network can use: http://${address}:${port}  (${name})`);
+    }
   });
 
   server.on('error', (err) => {
@@ -165,6 +176,7 @@ const startServer = (port = BASE_PORT, attempt = 1) => {
 };
 
 startServer();
+startLanDiscovery(() => activeHttpPort);
 
 // Surface dead API keys / retired models in the logs at boot instead of
 // letting AI chat silently degrade to the offline fallback reply.
